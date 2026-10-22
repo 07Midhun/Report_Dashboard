@@ -5,17 +5,20 @@ from .database import engine, Base
 from .api import api_router
 from . import models  # Ensures all models are registered
 
-# Create database tables if needed
-try:
-    Base.metadata.create_all(bind=engine)
-except Exception:
-    pass
-
 app = FastAPI(
     title="Ward-Wise Pole Management & Connectivity API",
     description="Standalone Full-Stack Dashboard Backend for Excel Report Management and Interactive Leaflet Pole Mapping",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+def on_startup():
+    """Initialize database tables safely after server port binding."""
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("Database tables initialized successfully.", flush=True)
+    except Exception as e:
+        print(f"Notice: Deferred DB init: {e}", flush=True)
 
 # CORS configuration
 configured_origins = [orig.strip() for orig in settings.FRONTEND_ORIGIN.split(",") if orig.strip()]

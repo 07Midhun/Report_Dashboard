@@ -6,10 +6,16 @@ BASE_DIR = BACKEND_DIR.parent
 DEFAULT_STORAGE_ROOT = str(BASE_DIR / "storage")
 
 class Settings:
-    DATABASE_URL: str = os.getenv(
+    raw_db_url = os.getenv(
         "DATABASE_URL", 
         "postgresql+psycopg2://postgres@127.0.0.1:5432/schnell_dashboard"
     )
+    if raw_db_url.startswith("postgres://"):
+        DATABASE_URL = raw_db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif raw_db_url.startswith("postgresql://") and not raw_db_url.startswith("postgresql+"):
+        DATABASE_URL = raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    else:
+        DATABASE_URL = raw_db_url
     JWT_SECRET_KEY: str = os.getenv(
         "JWT_SECRET_KEY", 
         "schnell-pole-management-super-secret-jwt-key-32charsmin-2026"

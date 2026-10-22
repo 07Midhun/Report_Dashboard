@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%" fill="none">
+  <!-- Schnell Blue 'S' Connected Waves Logo -->
+  <g fill="#1E88E5">
+    <!-- Top Arc 1 (Outermost) -->
+    <path d="M 64 114 A 62 62 0 1 1 122 18 L 122 36 A 44 44 0 1 0 80 102 Z" />
+    
+    <!-- Top Arc 2 (Middle) -->
+    <path d="M 76 112 A 46 46 0 1 1 112 36 L 112 52 A 30 30 0 1 0 88 100 Z" />
+
+    <!-- Top Arc 3 (Inner) -->
+    <path d="M 88 110 A 30 30 0 1 1 102 54 L 102 70 A 14 14 0 1 0 94 98 Z" />
+
+    <!-- Bottom Arc 1 (Outermost - 180 deg symmetry) -->
+    <path d="M 136 86 A 62 62 0 1 1 78 182 L 78 164 A 44 44 0 1 0 120 98 Z" />
+
+    <!-- Bottom Arc 2 (Middle) -->
+    <path d="M 124 88 A 46 46 0 1 1 88 164 L 88 148 A 30 30 0 1 0 112 100 Z" />
+
+    <!-- Bottom Arc 3 (Inner) -->
+    <path d="M 112 90 A 30 30 0 1 1 98 146 L 98 130 A 14 14 0 1 0 106 102 Z" />
+  </g>
+</svg>

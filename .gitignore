@@ -1,0 +1,35 @@
+# Environment variables (keep secrets local)
+.env
+!.env.example
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+
+# Python / Backend
+backend/__pycache__/
+backend/*/__pycache__/
+backend/*/*/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+__pycache__/
+
+# Logs
+*.log
+logs/
+postgres.log
+
+# Temporary and editor files
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+scratch_check.py

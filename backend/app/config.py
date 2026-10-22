@@ -16,6 +16,10 @@ class Settings:
         DATABASE_URL = raw_db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     else:
         DATABASE_URL = raw_db_url
+
+    if "render.com" in DATABASE_URL and "sslmode" not in DATABASE_URL:
+        sep = "&" if "?" in DATABASE_URL else "?"
+        DATABASE_URL = f"{DATABASE_URL}{sep}sslmode=require"
     JWT_SECRET_KEY: str = os.getenv(
         "JWT_SECRET_KEY", 
         "schnell-pole-management-super-secret-jwt-key-32charsmin-2026"

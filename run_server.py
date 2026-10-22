@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -24,13 +25,40 @@ if __name__ == "__main__":
         port = 8000
 
     host = "0.0.0.0"
-    print(f"--> [run_server] Launching Ward-Wise Backend on http://{host}:{port}...", flush=True)
+    print(f"--> [run_server] Launching Ward-Wise Backend on {host}:{port}...", flush=True)
 
     try:
+        t0 = time.time()
+        print("--> [run_server] Step 1: Loading config...", flush=True)
+        from backend.app.config import settings
+        print(f"--> [run_server] Step 1 OK ({round(time.time() - t0, 3)}s)", flush=True)
+
+        t0 = time.time()
+        print("--> [run_server] Step 2: Initializing database engine...", flush=True)
+        from backend.app.database import engine, Base
+        print(f"--> [run_server] Step 2 OK ({round(time.time() - t0, 3)}s)", flush=True)
+
+        t0 = time.time()
+        print("--> [run_server] Step 3: Loading models...", flush=True)
+        from backend.app import models
+        print(f"--> [run_server] Step 3 OK ({round(time.time() - t0, 3)}s)", flush=True)
+
+        t0 = time.time()
+        print("--> [run_server] Step 4: Loading API routes...", flush=True)
+        from backend.app.api import api_router
+        print(f"--> [run_server] Step 4 OK ({round(time.time() - t0, 3)}s)", flush=True)
+
+        t0 = time.time()
+        print("--> [run_server] Step 5: Loading FastAPI app...", flush=True)
         from backend.app.main import app
-        print("--> [run_server] FastAPI app imported cleanly. Starting Uvicorn...", flush=True)
-        uvicorn.run(app, host=host, port=port)
-    except Exception as e:
-        print("--> [run_server] Startup error:", flush=True)
+        print(f"--> [run_server] Step 5 OK ({round(time.time() - t0, 3)}s)", flush=True)
+
+        print(f"--> [run_server] Starting Uvicorn on {host}:{port}...", flush=True)
+        uvicorn.run("backend.app.main:app", host=host, port=port, log_level="info")
+
+    except BaseException as e:
+        print(f"--> [run_server] CRITICAL ERROR on startup: {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
         sys.exit(1)

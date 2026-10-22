@@ -31,11 +31,11 @@ services:
         fromService:
           type: web
           name: schnell-dashboard-backend
-          property: url
+          property: host
 
 databases:
   # 3. Managed PostgreSQL Database
   - name: schnell-dashboard-db
     databaseName: schnell_dashboard
-    user: postgres
+    user: schnell_user
     plan: free

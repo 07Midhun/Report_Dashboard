@@ -42,8 +42,10 @@ export const MergedLedReportCard: React.FC<Props> = ({
   }, [wardId]);
 
   useEffect(() => {
+    setSummary(null);
+    setErrorMsg("");
     fetchSummary();
-  }, [fetchSummary]);
+  }, [wardId, fetchSummary]);
 
   const handleDownload = async () => {
     if (!summary?.is_available) return;
@@ -79,7 +81,7 @@ export const MergedLedReportCard: React.FC<Props> = ({
     }
   };
 
-  const isAvailable = summary?.is_available === true;
+  const isAvailable = summary?.is_available === true && summary?.ward_id === wardId;
 
   return (
     <div className="bg-gradient-to-br from-white via-teal-50/20 to-emerald-50/30 rounded-2xl border-2 border-teal-500/30 shadow-md hover:shadow-lg transition overflow-hidden">

@@ -33,3 +33,4 @@ postgres.log
 *.sln
 *.sw?
 scratch_check.py
+storage/merged/

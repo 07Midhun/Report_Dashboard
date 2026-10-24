@@ -160,6 +160,7 @@ export interface Pole {
   latitude: number;
   longitude: number;
   connectivity_status: "connected" | "disconnected" | "pending" | "unknown";
+  source?: "installed_lamp" | "extracted_survey" | string;
   source_report_id?: number;
   additional_attributes?: Record<string, any>;
   created_at: string;
@@ -169,6 +170,8 @@ export interface Pole {
 export interface PoleSummary {
   ward_id: number;
   total_poles: number;
+  installed_lamp_count?: number;
+  extracted_survey_count?: number;
   connected_poles: number;
   disconnected_poles: number;
   pending_poles: number;
@@ -277,8 +280,10 @@ export const api = {
   },
 
   // Poles
-  getWardPoles: async (wardId: number, statusFilter?: string): Promise<Pole[]> => {
-    const params = statusFilter && statusFilter !== "all" ? { status_filter: statusFilter } : {};
+  getWardPoles: async (wardId: number, statusFilter?: string, sourceFilter?: string): Promise<Pole[]> => {
+    const params: Record<string, string> = {};
+    if (statusFilter && statusFilter !== "all") params.status_filter = statusFilter;
+    if (sourceFilter && sourceFilter !== "all") params.source_filter = sourceFilter;
     const res = await apiClient.get<Pole[]>(`/api/wards/${wardId}/poles`, { params });
     return res.data;
   },

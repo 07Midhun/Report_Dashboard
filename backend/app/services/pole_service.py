@@ -9,7 +9,52 @@ from ..schemas.pole import PoleSummaryOut, ColumnMappingConfig
 from .excel_parser import extract_poles_from_excel, is_valid_lat_long
 
 def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
-    """Computes connectivity and coordinate summary for the selected ward."""
+    """Computes connectivity and coordinate summary for the selected ward, prioritizing merged data."""
+    from pathlib import Path
+    import json
+    from ..config import settings
+
+    merged_dir = Path(settings.STORAGE_ROOT) / "merged"
+    meta_path = merged_dir / f"ward_{ward_id}_master_merged_led.json"
+    poles_cache_path = merged_dir / f"ward_{ward_id}_master_merged_poles.json"
+
+    if meta_path.exists() and poles_cache_path.exists():
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            with open(poles_cache_path, "r", encoding="utf-8") as pf:
+                poles_data = json.load(pf)
+
+            valid_coords = [
+                p for p in poles_data 
+                if p.get("latitude") and p.get("longitude") 
+                and is_valid_lat_long(float(p["latitude"]), float(p["longitude"]))
+            ]
+            has_valid = len(valid_coords) > 0
+            center_lat = sum(float(p["latitude"]) for p in valid_coords) / len(valid_coords) if has_valid else None
+            center_lon = sum(float(p["longitude"]) for p in valid_coords) / len(valid_coords) if has_valid else None
+
+            tot = meta.get("total_merged_count", len(poles_data))
+            lamp_cnt = meta.get("lamp_rows_count", 0)
+            survey_cnt = meta.get("pole_led_rows_count", 0)
+
+            return PoleSummaryOut(
+                ward_id=ward_id,
+                total_poles=tot,
+                installed_lamp_count=lamp_cnt,
+                extracted_survey_count=survey_cnt,
+                connected_poles=tot,
+                disconnected_poles=0,
+                pending_poles=0,
+                unknown_poles=0,
+                has_valid_coordinates=has_valid,
+                center_latitude=center_lat,
+                center_longitude=center_lon,
+                available_reports=["master_merged_led"]
+            )
+        except Exception:
+            pass
+
     poles = db.query(Pole).filter(Pole.ward_id == ward_id).all()
     
     total = len(poles)
@@ -37,6 +82,8 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
     return PoleSummaryOut(
         ward_id=ward_id,
         total_poles=total,
+        installed_lamp_count=0,
+        extracted_survey_count=total,
         connected_poles=connected,
         disconnected_poles=disconnected,
         pending_poles=pending,
@@ -46,6 +93,39 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
         center_longitude=center_lon,
         available_reports=available_reports
     )
+
+def get_ward_poles_list(
+    db: Session,
+    ward_id: int,
+    status_filter: Optional[str] = None,
+    source_filter: Optional[str] = None
+) -> List[Any]:
+    """Returns poles for a ward, prioritizing Master Merged poles cache with fast source filtering."""
+    from pathlib import Path
+    import json
+    from ..config import settings
+
+    merged_dir = Path(settings.STORAGE_ROOT) / "merged"
+    poles_cache_path = merged_dir / f"ward_{ward_id}_master_merged_poles.json"
+
+    if poles_cache_path.exists():
+        try:
+            with open(poles_cache_path, "r", encoding="utf-8") as pf:
+                poles_data = json.load(pf)
+
+            if source_filter and source_filter.lower() != "all":
+                s_lower = source_filter.lower()
+                poles_data = [p for p in poles_data if p.get("source", "").lower() == s_lower]
+
+            return poles_data
+        except Exception:
+            pass
+
+    # Fallback to DB query
+    query = db.query(Pole).filter(Pole.ward_id == ward_id)
+    if status_filter and status_filter.lower() != "all":
+        query = query.filter(Pole.connectivity_status == status_filter.lower())
+    return query.order_by(Pole.pole_number).all()
 
 def import_poles_for_ward(
     db: Session,

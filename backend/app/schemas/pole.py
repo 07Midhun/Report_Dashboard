@@ -3,22 +3,25 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 class PoleOut(BaseModel):
-    id: int
+    id: Optional[int] = None
     ward_id: int
     pole_number: str
     latitude: float
     longitude: float
     connectivity_status: str  # connected, disconnected, pending, unknown
+    source: Optional[str] = "installed_lamp"  # installed_lamp, extracted_survey
     source_report_id: Optional[int] = None
     additional_attributes: Optional[Dict[str, Any]] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 class PoleSummaryOut(BaseModel):
     ward_id: int
     total_poles: int
+    installed_lamp_count: Optional[int] = 0
+    extracted_survey_count: Optional[int] = 0
     connected_poles: int
     disconnected_poles: int
     pending_poles: int

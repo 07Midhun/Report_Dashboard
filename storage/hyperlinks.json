@@ -1,4 +1,4 @@
 {
-  "om_dashboard_url": "https://om.schnellenergy.com/dashboard",
-  "energy_saving_report_url": "https://reports.schnellenergy.com/energy-savings"
+  "om_dashboard_url": "https://schnelliot.in/iframeView?stateId=O%26M%20Dashboard&iframeUrl=dashboard%2F25554950-bf3d-11ed-8176-b3e699378db6&setAccessToken=true",
+  "energy_saving_report_url": "https://schnelliot.in/iframeView/child?stateId=KPI%20Reports&childStateId=Energy%20Saving%20Report&childIframeUrl=dashboard%2Fed6d5020-0111-11ee-a135-4d9a20f040b1&childSetAccessToken=true"
 }

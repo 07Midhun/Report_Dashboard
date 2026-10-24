@@ -7,7 +7,7 @@ from ..models.ward import Ward
 from ..models.user import User
 from ..schemas.pole import PoleOut, PoleSummaryOut, PoleImportRequest
 from ..services.auth_service import get_current_user, get_current_admin
-from ..services.pole_service import get_ward_pole_summary, import_poles_for_ward
+from ..services.pole_service import get_ward_pole_summary, import_poles_for_ward, get_ward_poles_list
 
 router = APIRouter(prefix="/api/wards/{ward_id}/poles", tags=["Pole Connectivity & Map"])
 
@@ -24,21 +24,17 @@ def validate_ward(db: Session, ward_id: int) -> Ward:
 def list_ward_poles(
     ward_id: int,
     status_filter: Optional[str] = None,
+    source_filter: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Returns poles belonging to the selected ward.
     Strictly isolated per ward.
-    Optionally filter by status (connected, disconnected, pending, unknown).
+    Supports filtering by source ('installed_lamp', 'extracted_survey') and connectivity status.
     """
     validate_ward(db, ward_id)
-    query = db.query(Pole).filter(Pole.ward_id == ward_id)
-    if status_filter:
-        query = query.filter(Pole.connectivity_status == status_filter.lower())
-    
-    poles = query.order_by(Pole.pole_number).all()
-    return poles
+    return get_ward_poles_list(db, ward_id, status_filter=status_filter, source_filter=source_filter)
 
 @router.get("/summary", response_model=PoleSummaryOut)
 def get_pole_summary(

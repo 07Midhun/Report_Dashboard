@@ -53,8 +53,8 @@ if __name__ == "__main__":
         from backend.app.main import app
         print(f"--> [run_server] Step 5 OK ({round(time.time() - t0, 3)}s)", flush=True)
 
-        print(f"--> [run_server] Starting Uvicorn on {host}:{port}...", flush=True)
-        uvicorn.run("backend.app.main:app", host=host, port=port, log_level="info")
+        print(f"--> [run_server] Starting Uvicorn on {host}:{port} with auto-reload...", flush=True)
+        uvicorn.run("backend.app.main:app", host=host, port=port, reload=True, log_level="info")
 
     except BaseException as e:
         print(f"--> [run_server] CRITICAL ERROR on startup: {type(e).__name__}: {e}", flush=True)

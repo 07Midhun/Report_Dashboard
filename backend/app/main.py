@@ -87,6 +87,17 @@ app.add_middleware(
 
 app.include_router(api_router)
 
+@app.get("/", tags=["System"])
+def root():
+    """Root endpoint providing service status and docs link."""
+    return {
+        "status": "online",
+        "service": "Schnell Ward-Wise Pole Management API",
+        "version": "1.0.0",
+        "docs_url": "/docs",
+        "health_check": "/api/health"
+    }
+
 @app.get("/api/health", tags=["System"])
 def health_check():
     """Health check endpoint."""

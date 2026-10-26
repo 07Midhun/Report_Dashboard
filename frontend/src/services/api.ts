@@ -28,10 +28,6 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem("schnell_token");
       localStorage.removeItem("schnell_user");
-      // Only redirect if not already on login
-      if (!window.location.pathname.includes("/login")) {
-        window.location.href = "/login";
-      }
     }
     return Promise.reject(error);
   }

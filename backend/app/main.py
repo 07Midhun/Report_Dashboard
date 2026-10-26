@@ -47,14 +47,18 @@ def on_startup():
 
             db.commit()
 
-            # Auto-seed BBMP hierarchy if regions are empty
+            # Auto-seed BBMP hierarchy in background thread so server port binds immediately
             if db.query(Region).count() == 0:
-                print("Empty database detected. Seeding BBMP hierarchy...", flush=True)
-                try:
-                    from ..seed_bbmp import seed_bbmp
-                    seed_bbmp()
-                except Exception as se:
-                    print(f"Notice: Hierarchy auto-seed deferred: {se}", flush=True)
+                print("Empty database detected. Launching background hierarchy seed...", flush=True)
+                import threading
+                def _bg_seed():
+                    try:
+                        from ..seed_bbmp import seed_bbmp
+                        seed_bbmp()
+                        print("Background BBMP hierarchy seeding complete.", flush=True)
+                    except Exception as se:
+                        print(f"Notice: Background seed: {se}", flush=True)
+                threading.Thread(target=_bg_seed, daemon=True).start()
         finally:
             db.close()
 

@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db

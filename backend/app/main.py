@@ -13,12 +13,54 @@ app = FastAPI(
 
 @app.on_event("startup")
 def on_startup():
-    """Initialize database tables safely after server port binding."""
+    """Initialize database tables safely after server port binding and auto-seed initial users if needed."""
     try:
         Base.metadata.create_all(bind=engine)
         print("Database tables initialized successfully.", flush=True)
+
+        from .database import SessionLocal
+        from .models.user import User
+        from .services.auth_service import get_password_hash
+        from .models.region import Region
+
+        db = SessionLocal()
+        try:
+            # Auto-seed admin user if missing
+            if not db.query(User).filter(User.username == "admin").first():
+                db.add(User(
+                    username="admin",
+                    password_hash=get_password_hash("Admin@12345"),
+                    role="admin",
+                    is_active=True
+                ))
+                print("Default admin user created: admin / Admin@12345", flush=True)
+
+            # Auto-seed operator user if missing
+            if not db.query(User).filter(User.username == "operator").first():
+                db.add(User(
+                    username="operator",
+                    password_hash=get_password_hash("User@12345"),
+                    role="user",
+                    is_active=True
+                ))
+                print("Default operator user created: operator / User@12345", flush=True)
+
+            db.commit()
+
+            # Auto-seed BBMP hierarchy if regions are empty
+            if db.query(Region).count() == 0:
+                print("Empty database detected. Seeding BBMP hierarchy...", flush=True)
+                try:
+                    from ..seed_bbmp import seed_bbmp
+                    seed_bbmp()
+                except Exception as se:
+                    print(f"Notice: Hierarchy auto-seed deferred: {se}", flush=True)
+        finally:
+            db.close()
+
     except Exception as e:
         print(f"Notice: Deferred DB init: {e}", flush=True)
+
 
 # CORS configuration
 configured_origins = [orig.strip() for orig in settings.FRONTEND_ORIGIN.split(",") if orig.strip()]

@@ -16,11 +16,39 @@ def list_regions_with_wards(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Returns full hierarchy of regions and wards.
+    Returns full hierarchy of regions and wards with lightning-fast aggregate queries.
     Requires authentication.
     """
-    regions = db.query(Region).order_by(Region.region_name).all()
-    # Populate stats per ward
+    from sqlalchemy import func
+    from ..models.pole import Pole
+    from ..models.report import Report
+    from ..services.seed_service import seed_bbmp_hierarchy
+
+    # Ensure hierarchy is seeded if database is clean
+    if db.query(Region).count() == 0:
+        seed_bbmp_hierarchy(db)
+
+    # Pre-fetch counts in single fast GROUP BY queries to avoid loading 42,000+ ORM objects
+    try:
+        pole_counts = dict(
+            db.query(Pole.ward_id, func.count(Pole.id))
+            .group_by(Pole.ward_id)
+            .all()
+        )
+    except Exception:
+        pole_counts = {}
+
+    try:
+        active_report_counts = dict(
+            db.query(Report.ward_id, func.count(Report.id))
+            .filter(Report.is_active == True)
+            .group_by(Report.ward_id)
+            .all()
+        )
+    except Exception:
+        active_report_counts = {}
+
+    regions = db.query(Region).order_by(Region.division, Region.region_name).all()
     results = []
     for reg in regions:
         wards_out = []
@@ -32,11 +60,11 @@ def list_regions_with_wards(
                 ward_name=w.ward_name,
                 ward_code=w.ward_code,
                 created_at=w.created_at,
-                active_reports_count=len([r for r in w.reports if r.is_active]),
-                total_poles_count=len(w.poles),
+                active_reports_count=active_report_counts.get(w.id, 0),
+                total_poles_count=pole_counts.get(w.id, 0),
                 zone_name=reg.region_name,
-                division=getattr(reg, "division", "East"),
-                corporation=getattr(reg, "corporation", "Bangalore (BBMP)")
+                division=getattr(reg, "division", "East") or "East",
+                corporation=getattr(reg, "corporation", "Bangalore (BBMP)") or "Bangalore (BBMP)"
             )
             wards_out.append(w_out)
         
@@ -44,8 +72,8 @@ def list_regions_with_wards(
             id=reg.id,
             region_code=reg.region_code,
             region_name=reg.region_name,
-            corporation=getattr(reg, "corporation", "Bangalore (BBMP)"),
-            division=getattr(reg, "division", "East"),
+            corporation=getattr(reg, "corporation", "Bangalore (BBMP)") or "Bangalore (BBMP)",
+            division=getattr(reg, "division", "East") or "East",
             created_at=reg.created_at,
             wards=wards_out
         )

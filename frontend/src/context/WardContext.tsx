@@ -24,10 +24,47 @@ interface WardContextType {
   setSearchQuery: (q: string) => void;
 }
 
+const getStaticFallbackRegions = (): Region[] => {
+  let regId = 1;
+  let wardId = 1;
+  const result: Region[] = [];
+  BANGALORE_BBMP_HIERARCHY.regions.forEach((rConfig) => {
+    rConfig.zones.forEach((zConfig) => {
+      const currentRegId = regId++;
+      const wardsList: Ward[] = [];
+      for (let w = zConfig.startWard; w <= zConfig.endWard; w++) {
+        wardsList.push({
+          id: wardId++,
+          region_id: currentRegId,
+          ward_number: `W${w}`,
+          ward_name: `W${w}`,
+          ward_code: `${zConfig.code}-W${w}`,
+          created_at: new Date().toISOString(),
+          active_reports_count: 0,
+          total_poles_count: 0,
+          zone_name: zConfig.name,
+          division: rConfig.name,
+          corporation: BANGALORE_BBMP_HIERARCHY.mainLocation,
+        });
+      }
+      result.push({
+        id: currentRegId,
+        region_code: zConfig.code,
+        region_name: zConfig.name,
+        corporation: BANGALORE_BBMP_HIERARCHY.mainLocation,
+        division: rConfig.name,
+        created_at: new Date().toISOString(),
+        wards: wardsList,
+      });
+    });
+  });
+  return result;
+};
+
 const WardContext = createContext<WardContextType | undefined>(undefined);
 
 export const WardProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [regions, setRegions] = useState<Region[]>([]);
+  const [regions, setRegions] = useState<Region[]>(() => getStaticFallbackRegions());
   const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
   const [selectedWard, setSelectedWard] = useState<Ward | null>(null);
   
@@ -36,30 +73,31 @@ export const WardProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [selectedDivision, setSelectedDivision] = useState<string>("");
   const [selectedZone, setSelectedZone] = useState<string>("");
   
-  const [loadingRegions, setLoadingRegions] = useState<boolean>(true);
+  const [loadingRegions, setLoadingRegions] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   const refreshHierarchy = useCallback(async () => {
     try {
       setLoadingRegions(true);
       const data = await api.getRegions();
-      setRegions(data);
-
-      // Keep selection synced if already selected
-      if (selectedWard) {
-        for (const reg of data) {
-          const matchingWard = reg.wards.find((w) => w.id === selectedWard.id);
-          if (matchingWard) {
-            setSelectedRegion(reg);
-            setSelectedWard(matchingWard);
-            setSelectedDivision(reg.division || "");
-            setSelectedZone(reg.region_name || "");
-            break;
+      if (data && data.length > 0) {
+        setRegions(data);
+        // Keep selection synced if already selected
+        if (selectedWard) {
+          for (const reg of data) {
+            const matchingWard = reg.wards.find((w) => w.id === selectedWard.id || w.ward_number === selectedWard.ward_number);
+            if (matchingWard) {
+              setSelectedRegion(reg);
+              setSelectedWard(matchingWard);
+              setSelectedDivision(reg.division || "");
+              setSelectedZone(reg.region_name || "");
+              break;
+            }
           }
         }
       }
     } catch (err) {
-      console.error("Failed to load regions hierarchy", err);
+      console.warn("Could not load backend hierarchy; retaining standard BBMP configuration.", err);
     } finally {
       setLoadingRegions(false);
     }

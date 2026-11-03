@@ -2,7 +2,7 @@ import os
 import uuid
 import shutil
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 from fastapi import UploadFile, HTTPException, status
 from ..config import settings
 

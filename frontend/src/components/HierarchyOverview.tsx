@@ -296,8 +296,52 @@ export const HierarchyOverview: React.FC = () => {
     const dConstituencyCount = divisionData?.total_constituencies ?? 0;
     const dWardCount = divisionData?.total_wards ?? 0;
 
-    const constituenciesInDiv = regions.filter(
+    let constituenciesInDiv = regions.filter(
       (r) => (r.division || "East").toLowerCase() === selectedDivision.toLowerCase()
+    );
+
+    // Fallback from summaryData if regions has not loaded yet
+    if (constituenciesInDiv.length === 0 && summaryData?.constituencies) {
+      constituenciesInDiv = Object.values(summaryData.constituencies)
+        .filter((c) => (c.division || "East").toLowerCase() === selectedDivision.toLowerCase())
+        .map((c) => ({
+          id: c.id,
+          region_code: c.code,
+          region_name: c.name,
+          division: c.division,
+          corporation: "Bangalore (BBMP)",
+          created_at: new Date().toISOString(),
+          wards: c.wards.map((w) => ({
+            id: w.id,
+            region_id: c.id,
+            ward_number: w.ward_number,
+            ward_name: w.ward_name,
+            ward_code: w.ward_code,
+            created_at: new Date().toISOString(),
+            active_reports_count: w.active_reports_count,
+            total_poles_count: w.total_poles,
+            zone_name: c.name,
+            division: c.division,
+            corporation: "Bangalore (BBMP)"
+          }))
+        }));
+    }
+
+    // Flatten all constituent wards with their specific telemetry
+    const allWardsInDiv = constituenciesInDiv.flatMap((c) => 
+      c.wards.map((w) => {
+        const cStats = summaryData?.constituencies ? summaryData.constituencies[c.region_name] : null;
+        const wStats = cStats?.wards.find((sw) => sw.ward_number === w.ward_number || sw.id === w.id);
+        return {
+          ...w,
+          constituencyName: c.region_name,
+          installed_lamps: wStats?.installed_lamps ?? 0,
+          surveyed_leds: wStats?.surveyed_leds ?? 0,
+          total_poles: wStats?.total_poles ?? (w.total_poles_count || 0),
+          is_merged_available: wStats?.is_merged_available ?? false,
+          regionEntity: c,
+        };
+      })
     );
 
     return (
@@ -491,6 +535,85 @@ export const HierarchyOverview: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Complete Wards Inventory Table across this Region */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-slate-800">
+                All Wards in {selectedDivision} ({allWardsInDiv.length})
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Complete inventory across all constituent wards in {selectedDivision}. Click any ward to open its report dashboard and pole map.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 uppercase font-bold border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4">Ward</th>
+                  <th className="py-3 px-4">Ward Code</th>
+                  <th className="py-3 px-4">Constituency</th>
+                  <th className="py-3 px-4 text-right">Installed Lamps</th>
+                  <th className="py-3 px-4 text-right">Surveyed LEDs</th>
+                  <th className="py-3 px-4 text-right">Total Poles</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {allWardsInDiv.map((w) => (
+                  <tr 
+                    key={w.id} 
+                    className="hover:bg-teal-50/40 transition cursor-pointer"
+                    onClick={() => selectWard(w, w.regionEntity)}
+                  >
+                    <td className="py-3.5 px-4 font-bold text-slate-900">
+                      Ward {w.ward_number}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono text-slate-500 font-semibold">
+                      {w.ward_code}
+                    </td>
+                    <td className="py-3.5 px-4 text-slate-700 font-medium">
+                      {w.constituencyName}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono text-cyan-800 font-bold">
+                      {w.installed_lamps > 0 ? w.installed_lamps.toLocaleString() : "-"}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono text-emerald-700 font-bold">
+                      {w.surveyed_leds > 0 ? w.surveyed_leds.toLocaleString() : "-"}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono text-slate-900 font-black">
+                      {w.total_poles > 0 ? w.total_poles.toLocaleString() : "-"}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      {w.is_merged_available ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Merged Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                          Ready
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <button
+                        type="button"
+                        className="inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-md transition"
+                      >
+                        <span>Open Ward</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

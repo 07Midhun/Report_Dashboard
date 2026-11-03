@@ -18,6 +18,24 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
     meta_path = merged_dir / f"ward_{ward_id}_master_merged_led.json"
     poles_cache_path = merged_dir / f"ward_{ward_id}_master_merged_poles.json"
 
+    # Ensure merged report and poles cache are up-to-date with comparison algorithm (version 2)
+    need_generation = not (meta_path.exists() and poles_cache_path.exists())
+    if not need_generation:
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                chk_meta = json.load(f)
+            if chk_meta.get("algorithm_version") != 2:
+                need_generation = True
+        except Exception:
+            need_generation = True
+
+    if need_generation:
+        try:
+            from .merged_report_service import get_or_create_merged_led_report
+            get_or_create_merged_led_report(db, ward_id, force_regenerate=need_generation)
+        except Exception:
+            pass
+
     if meta_path.exists() and poles_cache_path.exists():
         try:
             with open(meta_path, "r", encoding="utf-8") as f:

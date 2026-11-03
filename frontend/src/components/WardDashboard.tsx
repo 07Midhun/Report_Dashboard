@@ -9,14 +9,15 @@ import { ReportHistoryModal } from "./ReportHistoryModal";
 import { PoleConnectivityMap } from "./PoleConnectivityMap";
 import { MergedLedReportCard } from "./MergedLedReportCard";
 import { ReportDataViewer } from "./ReportDataViewer";
+import { HierarchyOverview } from "./HierarchyOverview";
 import type { ReportDataResponse } from "../services/api";
 import {
-  Building2, FileSpreadsheet, RefreshCw,
-  AlertCircle, ChevronRight
+  FileSpreadsheet, RefreshCw,
+  AlertCircle
 } from "lucide-react";
 
 export const WardDashboard: React.FC = () => {
-  const { selectedWard, selectedRegion, regions } = useWard();
+  const { selectedWard, selectedRegion } = useWard();
 
   const [reportsData, setReportsData] = useState<WardReportSlotsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -120,51 +121,11 @@ export const WardDashboard: React.FC = () => {
   }
 
   // =========================================================================
-  // MANDATORY BEHAVIOR: SELECT THE WARD FIRST
-  // If no ward is selected, hide all ward-specific operations, reports, and map!
+  // NO WARD SELECTED: RENDER CENTRAL HIERARCHY OVERVIEW
+  // Shows 2 Zones, 7 Constituencies, 57 Wards + Region & Constituency Aggregates
   // =========================================================================
   if (!selectedWard) {
-    return (
-      <div className="flex-1 overflow-y-auto p-6 md:p-10 bg-slate-50 flex items-center justify-center">
-        <div className="max-w-xl w-full text-center space-y-6 bg-white p-8 md:p-12 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="w-16 h-16 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center mx-auto text-teal-600 shadow-xs">
-            <Building2 className="w-8 h-8" />
-          </div>
-
-          <div className="space-y-2">
-            <h2 className="text-xl font-bold text-slate-800 tracking-tight">
-              Select a Ward to View Dashboard
-            </h2>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Please choose a region and ward from the <strong>Project Hierarchy</strong> on the left sidebar to access report management, uploaded Excel workbooks, and interactive pole connectivity mapping.
-            </p>
-          </div>
-
-          {/* Quick stats on available hierarchy */}
-          <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100 text-left">
-            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-              <span className="text-[11px] text-slate-400 font-medium block">Configured Zones</span>
-              <span className="text-lg font-bold text-slate-700 font-mono">
-                {regions.length} Zones
-              </span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-              <span className="text-[11px] text-slate-400 font-medium block">Total Available Wards</span>
-              <span className="text-lg font-bold text-teal-700 font-mono">
-                {regions.reduce((acc, r) => acc + r.wards.length, 0)} Wards
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center space-x-1 text-xs text-teal-700 font-medium pt-2">
-            <span>Expand a region in the sidebar</span>
-            <ChevronRight className="w-4 h-4" />
-            <span>Select a ward</span>
-          </div>
-        </div>
-      </div>
-    );
+    return <HierarchyOverview />;
   }
 
   // =========================================================================

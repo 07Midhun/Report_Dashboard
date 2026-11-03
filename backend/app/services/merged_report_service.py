@@ -15,6 +15,7 @@ from ..models.report import Report
 from ..models.ward import Ward
 from ..models.region import Region
 from ..schemas.report import ReportDataResponse
+from .storage_service import safe_resolve_path, resolve_physical_file
 
 def get_merged_storage_dir() -> Path:
     merged_dir = Path(settings.STORAGE_ROOT) / "merged"
@@ -77,20 +78,39 @@ def get_or_create_merged_led_report(
             "generated_at": None,
         }
 
+    lamp_file_path = safe_resolve_path(lamp_rep.storage_key)
+    pole_file_path = safe_resolve_path(pole_rep.storage_key)
+
+    if not lamp_file_path or not pole_file_path:
+        return {
+            "is_available": False,
+            "ward_id": ward_id,
+            "ward_number": ward.ward_number,
+            "reason": "Uploaded report file(s) could not be located on the filesystem. Please verify or re-upload both reports.",
+            "lamp_uploaded": lamp_file_path is not None,
+            "pole_uploaded": pole_file_path is not None,
+            "lamp_rows_count": 0,
+            "pole_led_rows_count": 0,
+            "total_merged_count": 0,
+            "file_path": None,
+            "filename": None,
+            "file_size": 0,
+            "generated_at": None,
+        }
+
     merged_dir = get_merged_storage_dir()
     output_filename = f"Ward_{ward.ward_number}_Master_Merged_LED_Report.xlsx"
     output_path = merged_dir / f"ward_{ward_id}_master_merged_led.xlsx"
     meta_path = merged_dir / f"ward_{ward_id}_master_merged_led.json"
-
     poles_cache_path = merged_dir / f"ward_{ward_id}_master_merged_poles.json"
 
     # Check source file modification times
     source_latest_mtime = max(
-        os.path.getmtime(lamp_rep.storage_key) if os.path.exists(lamp_rep.storage_key) else 0,
-        os.path.getmtime(pole_rep.storage_key) if os.path.exists(pole_rep.storage_key) else 0,
+        os.path.getmtime(lamp_file_path),
+        os.path.getmtime(pole_file_path),
     )
 
-    # Return cached result if valid and meta exists
+    # Return cached result if valid and meta exists and has version 2 (with comparison extraction)
     if (
         not force_regenerate 
         and output_path.exists() 
@@ -101,25 +121,26 @@ def get_or_create_merged_led_report(
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-            return {
-                "is_available": True,
-                "ward_id": ward_id,
-                "ward_number": ward.ward_number,
-                "lamp_uploaded": True,
-                "pole_uploaded": True,
-                "lamp_rows_count": meta.get("lamp_rows_count", 0),
-                "pole_led_rows_count": meta.get("pole_led_rows_count", 0),
-                "total_merged_count": meta.get("total_merged_count", 0),
-                "file_path": str(output_path),
-                "filename": output_filename,
-                "file_size": meta.get("file_size", os.path.getsize(output_path)),
-                "generated_at": meta.get("generated_at"),
-            }
+            if meta.get("algorithm_version") == 2:
+                return {
+                    "is_available": True,
+                    "ward_id": ward_id,
+                    "ward_number": ward.ward_number,
+                    "lamp_uploaded": True,
+                    "pole_uploaded": True,
+                    "lamp_rows_count": meta.get("lamp_rows_count", 0),
+                    "pole_led_rows_count": meta.get("pole_led_rows_count", 0),
+                    "total_merged_count": meta.get("total_merged_count", 0),
+                    "file_path": str(output_path),
+                    "filename": output_filename,
+                    "file_size": meta.get("file_size", os.path.getsize(output_path)),
+                    "generated_at": meta.get("generated_at"),
+                }
         except Exception:
             pass
 
     # 1. Read Lamp Report (LED Report)
-    wb_lamp = openpyxl.load_workbook(lamp_rep.storage_key, data_only=True)
+    wb_lamp = openpyxl.load_workbook(lamp_file_path, data_only=True)
     sheet_lamp = wb_lamp.active
 
     # Create target merged workbook
@@ -127,7 +148,7 @@ def get_or_create_merged_led_report(
     sheet_out = wb_out.active
     sheet_out.title = "Master Merged LED Report"
 
-    existing_poles = set()
+    installed_ids = set()
     lamp_rows_count = 0
     poles_cache = []
 
@@ -149,6 +170,7 @@ def get_or_create_merged_led_report(
     if lamp_p_c < 0:
         lamp_p_c = 5
 
+    lamp_id_c = find_col_idx(lamp_headers, ["lamp id", "lamp_id"])
     lamp_lat_c = find_col_idx(lamp_headers, ["latitude", "lat"])
     lamp_lng_c = find_col_idx(lamp_headers, ["longitude", "long", "lng"])
     lamp_sp_c = find_col_idx(lamp_headers, ["switch point", "switchpoint", "sp no"])
@@ -169,11 +191,21 @@ def get_or_create_merged_led_report(
 
         sheet_out.append(list(row))
         lamp_rows_count += 1
-        existing_poles.add(pole_str)
-        # Also track base pole number without parenthetical suffix
-        clean_base = pole_str.split()[0].split("(")[0].strip()
+        
+        # Track pole ID and clean base in installed_ids set
+        installed_ids.add(pole_str.lower())
+        clean_base = pole_str.split()[0].split("(")[0].strip().lower() if pole_str.split() else pole_str.split("(")[0].strip().lower()
         if clean_base:
-            existing_poles.add(clean_base)
+            installed_ids.add(clean_base)
+
+        # Track lamp ID if present in Lamp Report
+        if lamp_id_c >= 0 and len(row) > lamp_id_c and row[lamp_id_c] is not None:
+            lid_str = str(row[lamp_id_c]).strip().lower()
+            if lid_str and lid_str not in ("none", "-", "nan"):
+                installed_ids.add(lid_str)
+                clean_lid = lid_str.split()[0].split("(")[0].strip() if lid_str.split() else lid_str.split("(")[0].strip()
+                if clean_lid:
+                    installed_ids.add(clean_lid)
 
         # Collect pole for map cache
         lat_v = row[lamp_lat_c] if lamp_lat_c >= 0 and len(row) > lamp_lat_c else None
@@ -209,11 +241,12 @@ def get_or_create_merged_led_report(
     wb_lamp.close()
 
     # 2. Read Pole Report and extract LED and FL LED poles
-    wb_pole = openpyxl.load_workbook(pole_rep.storage_key, data_only=True)
+    wb_pole = openpyxl.load_workbook(pole_file_path, data_only=True)
     sheet_pole = wb_pole.active
     pole_headers = [str(c).strip() if c else "" for c in next(sheet_pole.iter_rows(min_row=1, max_row=1, values_only=True))]
 
     p_id_c = find_col_idx(pole_headers, ["pole id", "pole number", "poleid"])
+    p_lamp_id_c = find_col_idx(pole_headers, ["lamp id", "lamp_id"])
     p_sp_c = find_col_idx(pole_headers, ["switch point", "switchpoint", "sp no"])
     p_type_c = find_col_idx(pole_headers, ["poletype", "pole type", "pole_type"])
     p_lamp_c = find_col_idx(pole_headers, ["lamp type", "lamptype", "mt,nl,led", "type of lamp"])
@@ -259,6 +292,7 @@ def get_or_create_merged_led_report(
 
     sr_no = lamp_rows_count + 1
     added_pole_led_count = 0
+    ignored_present_in_lamp_count = 0
     survey_poles_seen = set()
 
     for row in sheet_pole.iter_rows(min_row=2, values_only=True):
@@ -279,105 +313,126 @@ def get_or_create_merged_led_report(
             l_lower == "led" 
             or l_lower == "fl led" 
             or l_lower == "fl-led"
-            or l_lower in ("led", "fl led", "fl-led")
             or "fl led" in l_lower
             or "fl-led" in l_lower
+            or "led" in l_lower
         )
+        if not is_led:
+            continue
 
-        clean_pid = pid.split()[0].split("(")[0].strip()
+        clean_base = pid.split("(")[0].strip()
+        parts = clean_base.split()
+        clean_token = parts[0] if parts else clean_base
+        clean_lower = clean_token.lower()
+        pid_lower = pid.lower()
 
-        if is_led and clean_pid not in survey_poles_seen:
-            survey_poles_seen.add(clean_pid)
-            survey_poles_seen.add(pid)
+        # Deduplicate multiple entries for the same pole within the survey report
+        if clean_lower in survey_poles_seen:
+            continue
+        survey_poles_seen.add(clean_lower)
 
-            # Retrieve arm count from pole report
-            arm_raw = str(row[p_arm_c]).strip() if p_arm_c >= 0 and row[p_arm_c] is not None else "1"
-            try:
-                arm_num = int(float(arm_raw))
-            except (ValueError, TypeError):
-                arm_num = 1
+        # COMPARISON EXTRACTION LOGIC:
+        # If lamp/pole ID matches Installed Lamp Report -> IGNORE IT!
+        # If NOT matched with Installed Lamp Report -> LIST IT in Section 2!
+        pole_lamp_id = str(row[p_lamp_id_c]).strip().lower() if p_lamp_id_c >= 0 and row[p_lamp_id_c] is not None else ""
+        is_matched_with_installed = (
+            clean_lower in installed_ids
+            or pid_lower in installed_ids
+            or (pole_lamp_id and pole_lamp_id in installed_ids)
+        )
+        if is_matched_with_installed:
+            ignored_present_in_lamp_count += 1
+            continue
 
-            if arm_num <= 0:
-                arm_num = 1
+        # Pole is NOT in installed lamp reports -> Extracted Surveyed LED
+        # Retrieve arm count from pole report
+        arm_raw = str(row[p_arm_c]).strip() if p_arm_c >= 0 and row[p_arm_c] is not None else "1"
+        try:
+            arm_num = int(float(arm_raw))
+        except (ValueError, TypeError):
+            arm_num = 1
 
-            # Base pole ID without any existing parenthetical suffix
-            clean_base_id = pid.split("(")[0].strip()
+        if arm_num <= 0:
+            arm_num = 1
 
-            # If arm count is N (e.g. 2), put all arm lines inside the SAME box/cell separated by newline:
-            # GBA-SNL-W69-P2060-SP106(1)
-            # GBA-SNL-W69-P2060-SP106(2)
-            arm_pole_ids = [f"{clean_base_id}({arm_idx})" for arm_idx in range(1, arm_num + 1)]
-            formatted_pid = "\n".join(arm_pole_ids)
+        # Base pole ID without any existing parenthetical suffix
+        clean_base_id = pid.split("(")[0].strip()
 
-            new_row = [None] * num_cols
-            def set_cell(col_idx, val):
-                if 0 <= col_idx < num_cols:
-                    new_row[col_idx] = val
+        # If arm count is N (e.g. 2), put all arm lines inside the SAME box/cell separated by newline:
+        # GBA-SNL-W69-P2060-SP106(1)
+        # GBA-SNL-W69-P2060-SP106(2)
+        arm_pole_ids = [f"{clean_base_id}({arm_idx})" for arm_idx in range(1, arm_num + 1)]
+        formatted_pid = "\n".join(arm_pole_ids)
 
-            set_cell(out_sr_c if out_sr_c >= 0 else 0, sr_no)
-            set_cell(out_corp_c if out_corp_c >= 0 else 1, getattr(region, "division", "EAST") or "EAST")
-            set_cell(out_const_c if out_const_c >= 0 else 2, region.region_name if region and region.region_name else "PulakeshiNagar")
-            set_cell(out_ward_c if out_ward_c >= 0 else 3, ward.ward_code or ward.ward_number)
-            set_cell(out_sp_c if out_sp_c >= 0 else 4, row[p_sp_c] if p_sp_c >= 0 else None)
-            set_cell(out_pole_c if out_pole_c >= 0 else 5, formatted_pid)
-            set_cell(out_type_c if out_type_c >= 0 else 6, row[p_type_c] if p_type_c >= 0 and row[p_type_c] else "RCC")
-            set_cell(out_light_c if out_light_c >= 0 else 7, l_type if l_type else "LED")
-            set_cell(out_old_watt_c if out_old_watt_c >= 0 else 9, row[p_watt_c] if p_watt_c >= 0 else None)
-            set_cell(out_span_c if out_span_c >= 0 else 10, row[p_span_c] if p_span_c >= 0 else None)
-            set_cell(out_road_c if out_road_c >= 0 else 11, row[p_road_c] if p_road_c >= 0 else None)
-            set_cell(out_lat_c if out_lat_c >= 0 else 12, row[p_lat_c] if p_lat_c >= 0 else None)
-            set_cell(out_lng_c if out_lng_c >= 0 else 13, row[p_lng_c] if p_lng_c >= 0 else None)
-            set_cell(out_before_img1_c if out_before_img1_c >= 0 else 14, row[p_img1_c] if p_img1_c >= 0 else None)
-            set_cell(out_before_img1_link_c if out_before_img1_link_c >= 0 else 15, row[p_img1_c] if p_img1_c >= 0 else None)
-            set_cell(out_before_img2_c if out_before_img2_c >= 0 else 16, row[p_img2_c] if p_img2_c >= 0 else None)
-            set_cell(out_before_img2_link_c if out_before_img2_link_c >= 0 else 17, row[p_img2_c] if p_img2_c >= 0 else None)
-            set_cell(out_before_img3_c if out_before_img3_c >= 0 else 18, row[p_img3_c] if p_img3_c >= 0 else None)
-            set_cell(out_before_img3_link_c if out_before_img3_link_c >= 0 else 19, row[p_img3_c] if p_img3_c >= 0 else None)
-            set_cell(out_old_arm_c if out_old_arm_c >= 0 else 20, row[p_arm_cond_c] if p_arm_cond_c >= 0 else "Good")
-            set_cell(out_new_watt_c if out_new_watt_c >= 0 else 21, row[p_watt_c] if p_watt_c >= 0 else "Existing LED")
-            set_cell(out_new_arm_c if out_new_arm_c >= 0 else 22, "Existing")
-            set_cell(out_after_img1_c if out_after_img1_c >= 0 else 23, row[p_img1_c] if p_img1_c >= 0 else None)
-            set_cell(out_after_img1_link_c if out_after_img1_link_c >= 0 else 24, row[p_img1_c] if p_img1_c >= 0 else None)
-            set_cell(out_tree_c if out_tree_c >= 0 else 25, "-")
-            set_cell(out_remark_c if out_remark_c >= 0 else 26, "Surveyed Existing LED")
-            set_cell(out_lamp_id_c if out_lamp_id_c >= 0 else 27, formatted_pid)
+        new_row = [None] * num_cols
+        def set_cell(col_idx, val):
+            if 0 <= col_idx < num_cols:
+                new_row[col_idx] = val
 
-            sheet_out.append(new_row)
-            if arm_num > 1:
-                cur_r = sheet_out.max_row
-                p_col_target = (out_pole_c + 1) if out_pole_c >= 0 else 6
-                sheet_out.cell(row=cur_r, column=p_col_target).alignment = Alignment(wrap_text=True, vertical="center")
-                if out_lamp_id_c >= 0:
-                    sheet_out.cell(row=cur_r, column=out_lamp_id_c + 1).alignment = Alignment(wrap_text=True, vertical="center")
+        set_cell(out_sr_c if out_sr_c >= 0 else 0, sr_no)
+        set_cell(out_corp_c if out_corp_c >= 0 else 1, getattr(region, "division", "EAST") or "EAST")
+        set_cell(out_const_c if out_const_c >= 0 else 2, region.region_name if region and region.region_name else "PulakeshiNagar")
+        set_cell(out_ward_c if out_ward_c >= 0 else 3, ward.ward_code or ward.ward_number)
+        set_cell(out_sp_c if out_sp_c >= 0 else 4, row[p_sp_c] if p_sp_c >= 0 else None)
+        set_cell(out_pole_c if out_pole_c >= 0 else 5, formatted_pid)
+        set_cell(out_type_c if out_type_c >= 0 else 6, row[p_type_c] if p_type_c >= 0 and row[p_type_c] else "RCC")
+        set_cell(out_light_c if out_light_c >= 0 else 7, l_type if l_type else "LED")
+        set_cell(out_old_watt_c if out_old_watt_c >= 0 else 9, row[p_watt_c] if p_watt_c >= 0 else None)
+        set_cell(out_span_c if out_span_c >= 0 else 10, row[p_span_c] if p_span_c >= 0 else None)
+        set_cell(out_road_c if out_road_c >= 0 else 11, row[p_road_c] if p_road_c >= 0 else None)
+        set_cell(out_lat_c if out_lat_c >= 0 else 12, row[p_lat_c] if p_lat_c >= 0 else None)
+        set_cell(out_lng_c if out_lng_c >= 0 else 13, row[p_lng_c] if p_lng_c >= 0 else None)
+        set_cell(out_before_img1_c if out_before_img1_c >= 0 else 14, row[p_img1_c] if p_img1_c >= 0 else None)
+        set_cell(out_before_img1_link_c if out_before_img1_link_c >= 0 else 15, row[p_img1_c] if p_img1_c >= 0 else None)
+        set_cell(out_before_img2_c if out_before_img2_c >= 0 else 16, row[p_img2_c] if p_img2_c >= 0 else None)
+        set_cell(out_before_img2_link_c if out_before_img2_link_c >= 0 else 17, row[p_img2_c] if p_img2_c >= 0 else None)
+        set_cell(out_before_img3_c if out_before_img3_c >= 0 else 18, row[p_img3_c] if p_img3_c >= 0 else None)
+        set_cell(out_before_img3_link_c if out_before_img3_link_c >= 0 else 19, row[p_img3_c] if p_img3_c >= 0 else None)
+        set_cell(out_old_arm_c if out_old_arm_c >= 0 else 20, row[p_arm_cond_c] if p_arm_cond_c >= 0 else "Good")
+        set_cell(out_new_watt_c if out_new_watt_c >= 0 else 21, row[p_watt_c] if p_watt_c >= 0 else "Existing LED")
+        set_cell(out_new_arm_c if out_new_arm_c >= 0 else 22, "Existing")
+        set_cell(out_after_img1_c if out_after_img1_c >= 0 else 23, row[p_img1_c] if p_img1_c >= 0 else None)
+        set_cell(out_after_img1_link_c if out_after_img1_link_c >= 0 else 24, row[p_img1_c] if p_img1_c >= 0 else None)
+        set_cell(out_tree_c if out_tree_c >= 0 else 25, "-")
+        set_cell(out_remark_c if out_remark_c >= 0 else 26, "Surveyed Existing LED")
+        set_cell(out_lamp_id_c if out_lamp_id_c >= 0 else 27, formatted_pid)
 
-            # Collect pole for map cache
-            s_lat_v = row[p_lat_c] if p_lat_c >= 0 else None
-            s_lng_v = row[p_lng_c] if p_lng_c >= 0 else None
-            try:
-                sf_lat = float(s_lat_v) if s_lat_v is not None else 0.0
-                sf_lng = float(s_lng_v) if s_lng_v is not None else 0.0
-            except (ValueError, TypeError):
-                sf_lat, sf_lng = 0.0, 0.0
+        sheet_out.append(new_row)
+        if arm_num > 1:
+            cur_r = sheet_out.max_row
+            p_col_target = (out_pole_c + 1) if out_pole_c >= 0 else 6
+            sheet_out.cell(row=cur_r, column=p_col_target).alignment = Alignment(wrap_text=True, vertical="center")
+            if out_lamp_id_c >= 0:
+                sheet_out.cell(row=cur_r, column=out_lamp_id_c + 1).alignment = Alignment(wrap_text=True, vertical="center")
 
-            poles_cache.append({
-                "id": len(poles_cache) + 1,
-                "ward_id": ward_id,
-                "pole_number": formatted_pid,
-                "latitude": sf_lat,
-                "longitude": sf_lng,
-                "source": "extracted_survey",
-                "connectivity_status": "connected",
-                "additional_attributes": {
-                    "Switch Point No": str(row[p_sp_c]) if p_sp_c >= 0 and row[p_sp_c] else "-",
-                    "Lamp Type": l_type if l_type else "LED",
-                    "Wattage": str(row[p_watt_c]) if p_watt_c >= 0 and row[p_watt_c] else "-",
-                    "Road Category": str(row[p_road_c]) if p_road_c >= 0 and row[p_road_c] else "-",
-                    "Source": "Extracted Surveyed LED"
-                }
-            })
+        # Collect pole for map cache
+        s_lat_v = row[p_lat_c] if p_lat_c >= 0 else None
+        s_lng_v = row[p_lng_c] if p_lng_c >= 0 else None
+        try:
+            sf_lat = float(s_lat_v) if s_lat_v is not None else 0.0
+            sf_lng = float(s_lng_v) if s_lng_v is not None else 0.0
+        except (ValueError, TypeError):
+            sf_lat, sf_lng = 0.0, 0.0
 
-            sr_no += 1
-            added_pole_led_count += 1
+        poles_cache.append({
+            "id": len(poles_cache) + 1,
+            "ward_id": ward_id,
+            "pole_number": formatted_pid,
+            "latitude": sf_lat,
+            "longitude": sf_lng,
+            "source": "extracted_survey",
+            "connectivity_status": "connected",
+            "additional_attributes": {
+                "Switch Point No": str(row[p_sp_c]) if p_sp_c >= 0 and row[p_sp_c] else "-",
+                "Lamp Type": l_type if l_type else "LED",
+                "Wattage": str(row[p_watt_c]) if p_watt_c >= 0 and row[p_watt_c] else "-",
+                "Road Category": str(row[p_road_c]) if p_road_c >= 0 and row[p_road_c] else "-",
+                "Source": "Extracted Surveyed LED"
+            }
+        })
+
+        sr_no += 1
+        added_pole_led_count += 1
 
     wb_pole.close()
 
@@ -389,15 +444,17 @@ def get_or_create_merged_led_report(
     file_size = os.path.getsize(output_path)
     now_dt = datetime.utcnow().isoformat()
 
-    # Save metadata sidecar
+    # Save metadata sidecar with algorithm_version = 2
     try:
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump({
                 "lamp_rows_count": lamp_rows_count,
                 "pole_led_rows_count": added_pole_led_count,
                 "total_merged_count": total_count,
+                "ignored_in_lamp_count": ignored_present_in_lamp_count,
                 "file_size": file_size,
-                "generated_at": now_dt
+                "generated_at": now_dt,
+                "algorithm_version": 2
             }, f, indent=2)
     except Exception:
         pass

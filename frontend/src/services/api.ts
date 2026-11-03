@@ -81,6 +81,52 @@ export interface ReportDataResponse {
   rows?: Record<string, any>[];
 }
 
+export interface WardSummaryItem {
+  id: number;
+  ward_number: string;
+  ward_name: string;
+  ward_code: string;
+  active_reports_count: number;
+  installed_lamps: number;
+  surveyed_leds: number;
+  total_poles: number;
+  is_merged_available: boolean;
+}
+
+export interface ConstituencySummaryItem {
+  id: number;
+  name: string;
+  code: string;
+  division: string;
+  total_wards: number;
+  installed_lamps: number;
+  surveyed_leds: number;
+  total_poles: number;
+  wards: WardSummaryItem[];
+}
+
+export interface DivisionSummaryItem {
+  name: string;
+  total_constituencies: number;
+  total_wards: number;
+  installed_lamps: number;
+  surveyed_leds: number;
+  total_poles: number;
+  constituency_ids: number[];
+  constituency_names: string[];
+}
+
+export interface HierarchySummaryResponse {
+  total_zones: number;
+  total_constituencies: number;
+  total_wards: number;
+  total_installed_lamps: number;
+  total_surveyed_leds: number;
+  total_poles: number;
+  divisions: Record<string, DivisionSummaryItem>;
+  constituencies: Record<string, ConstituencySummaryItem>;
+}
+
 export interface MergedLedSummaryResponse {
   is_available: boolean;
   ward_id: number;
@@ -202,6 +248,10 @@ export const api = {
   // Hierarchy
   getRegions: async (): Promise<Region[]> => {
     const res = await apiClient.get<Region[]>("/api/regions");
+    return res.data;
+  },
+  getHierarchySummary: async (): Promise<HierarchySummaryResponse> => {
+    const res = await apiClient.get<HierarchySummaryResponse>("/api/regions/summary");
     return res.data;
   },
   createRegion: async (region_code: string, region_name: string): Promise<Region> => {

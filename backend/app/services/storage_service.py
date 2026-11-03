@@ -90,15 +90,54 @@ def save_uploaded_file(
     storage_key = str(physical_file_path.resolve())
     return storage_key, ext, bytes_read, unique_id
 
+def safe_resolve_path(storage_key: str) -> Optional[Path]:
+    """
+    Safely resolves a storage_key to an existing physical Path without throwing an exception.
+    Handles absolute paths, relocated base directories, and relative paths.
+    """
+    if not storage_key:
+        return None
+    try:
+        p = Path(storage_key)
+        if p.is_file():
+            return p
+    except Exception:
+        pass
+
+    normalized = str(storage_key).replace("\\", "/")
+    # Try finding relative to settings.STORAGE_ROOT
+    if "storage/" in normalized:
+        rel_subpath = normalized.split("storage/", 1)[1]
+        alt_path = Path(settings.STORAGE_ROOT) / rel_subpath
+        if alt_path.is_file():
+            return alt_path
+        if "reports/" in rel_subpath:
+            rel_reports = rel_subpath.split("reports/", 1)[1]
+            alt_path2 = Path(settings.STORAGE_ROOT) / "reports" / rel_reports
+            if alt_path2.is_file():
+                return alt_path2
+    elif "reports/" in normalized:
+        rel_reports = normalized.split("reports/", 1)[1]
+        alt_path = Path(settings.STORAGE_ROOT) / "reports" / rel_reports
+        if alt_path.is_file():
+            return alt_path
+
+    # Direct check relative to workspace
+    rel_direct = Path(storage_key.lstrip("/\\"))
+    if rel_direct.is_file():
+        return rel_direct
+
+    return None
+
 def resolve_physical_file(storage_key: str) -> Path:
     """Safely resolves and verifies the existence of a physical file."""
-    path = Path(storage_key)
-    if not path.is_file():
+    resolved = safe_resolve_path(storage_key)
+    if not resolved or not resolved.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="The requested file was not found on the server filesystem"
         )
-    return path
+    return resolved
 
 def delete_physical_file(storage_key: str):
     """Deletes physical file and its parent unique folder."""

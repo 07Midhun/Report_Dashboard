@@ -122,14 +122,14 @@ export const PoleConnectivityMap: React.FC<Props> = ({
 
   // Counts for each source category
   const lampCount = useMemo(() => {
-    if (summary && summary.installed_lamp_count !== undefined && summary.installed_lamp_count > 0) {
+    if (summary && summary.installed_lamp_count !== undefined) {
       return summary.installed_lamp_count;
     }
     return validPoles.filter((p) => p.source === "installed_lamp").length;
   }, [summary, validPoles]);
 
   const surveyCount = useMemo(() => {
-    if (summary && summary.extracted_survey_count !== undefined && summary.extracted_survey_count > 0) {
+    if (summary && summary.extracted_survey_count !== undefined) {
       return summary.extracted_survey_count;
     }
     return validPoles.filter((p) => p.source === "extracted_survey").length;

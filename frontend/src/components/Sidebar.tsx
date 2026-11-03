@@ -13,7 +13,11 @@ export const Sidebar: React.FC = () => {
   const { 
     regions, 
     selectedWard, 
+    selectedRegion,
+    selectedDivision,
     selectWard, 
+    selectDivision,
+    selectConstituency,
     clearSelection, 
     loadingRegions, 
     refreshHierarchy 
@@ -276,7 +280,7 @@ export const Sidebar: React.FC = () => {
           <button
             onClick={() => clearSelection()}
             className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm font-medium transition text-left ${
-              !selectedWard
+              !selectedWard && !selectedRegion && !selectedDivision
                 ? "bg-[#006373] text-white font-semibold border-l-4 border-teal-300 shadow-inner"
                 : "text-teal-100 hover:bg-[#003e47] hover:text-white"
             }`}
@@ -434,8 +438,15 @@ export const Sidebar: React.FC = () => {
                     <div key={group.division} className="rounded border border-teal-800/80 bg-[#003d47] overflow-hidden">
                       {/* Level 2: Division Header (Bommanahalli / East) */}
                       <div
-                        onClick={() => toggleDivision(group.division)}
-                        className="flex items-center justify-between px-3 py-2 bg-[#003842] hover:bg-[#002f37] cursor-pointer transition select-none"
+                        onClick={() => {
+                          toggleDivision(group.division);
+                          selectDivision(group.division);
+                        }}
+                        className={`flex items-center justify-between px-3 py-2 cursor-pointer transition select-none ${
+                          selectedDivision === group.division && !selectedRegion && !selectedWard
+                            ? "bg-teal-600 text-white font-bold border-l-4 border-teal-300 shadow-inner"
+                            : "bg-[#003842] hover:bg-[#002f37] text-teal-100"
+                        }`}
                       >
                         <div className="flex items-center space-x-2 truncate">
                           {isDivExpanded ? (
@@ -444,7 +455,7 @@ export const Sidebar: React.FC = () => {
                             <ChevronRight className="w-3.5 h-3.5 text-teal-300/70 flex-shrink-0" />
                           )}
                           <Layers className="w-3.5 h-3.5 text-teal-300 flex-shrink-0" />
-                          <span className="font-bold text-xs uppercase tracking-wide truncate text-teal-100">
+                          <span className="font-bold text-xs uppercase tracking-wide truncate">
                             {group.division}
                           </span>
                         </div>
@@ -458,13 +469,21 @@ export const Sidebar: React.FC = () => {
                         <div className="p-1 space-y-1 bg-[#00333d]">
                           {group.zones.map((zone) => {
                             const isZoneExpanded = searchTerm ? true : (expandedZones[zone.id] ?? false);
+                            const isConstituencySelected = selectedRegion?.id === zone.id && !selectedWard;
 
                             return (
                               <div key={zone.id} className="rounded bg-[#002b33] border border-teal-900/60 overflow-hidden">
                                 {/* Zone Header */}
                                 <div
-                                  onClick={() => toggleZone(zone.id)}
-                                  className="flex items-center justify-between px-2.5 py-1.5 hover:bg-[#00242b] cursor-pointer transition select-none"
+                                  onClick={() => {
+                                    toggleZone(zone.id);
+                                    selectConstituency(zone);
+                                  }}
+                                  className={`flex items-center justify-between px-2.5 py-1.5 cursor-pointer transition select-none ${
+                                    isConstituencySelected
+                                      ? "bg-teal-700 text-white font-bold border-l-2 border-teal-300 shadow-sm"
+                                      : "hover:bg-[#00242b] text-teal-100"
+                                  }`}
                                 >
                                   <div className="flex items-center space-x-1.5 truncate">
                                     {isZoneExpanded ? (
@@ -472,7 +491,7 @@ export const Sidebar: React.FC = () => {
                                     ) : (
                                       <ChevronRight className="w-3 h-3 text-teal-400/60 flex-shrink-0" />
                                     )}
-                                    <span className="font-semibold text-xs text-teal-100 truncate">
+                                    <span className="font-semibold text-xs truncate">
                                       {zone.region_name}
                                     </span>
                                   </div>

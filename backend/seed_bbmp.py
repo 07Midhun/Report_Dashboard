@@ -53,7 +53,7 @@ BBMP_HIERARCHY = [
                 "code": "PKN",
                 "name": "PulakeshiNagar",
                 "start_ward": 69,
-                "end_ward": 74
+                "end_ward": 75
             },
             {
                 "code": "SVN",

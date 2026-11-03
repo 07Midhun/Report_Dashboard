@@ -12,6 +12,8 @@ interface WardContextType {
   selectedZone: string;          // "Hebbal", "Bommanahalli-Z1", etc.
   loadingRegions: boolean;
   selectWard: (ward: Ward, region: Region) => void;
+  selectDivision: (division: string) => void;
+  selectConstituency: (region: Region) => void;
   setMainLocation: (mainLoc: string) => void;
   setDivision: (division: string) => void;
   setZone: (zoneName: string) => void;
@@ -74,6 +76,22 @@ export const WardProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSelectedMainLocation(region.corporation || BANGALORE_BBMP_HIERARCHY.mainLocation);
     setSelectedDivision(region.division || "");
     setSelectedZone(region.region_name);
+  };
+
+  // When a whole Division/Region is clicked (e.g. "East" or "Bommanahalli")
+  const selectDivision = (division: string) => {
+    setSelectedDivision(division);
+    setSelectedZone("");
+    setSelectedRegion(null);
+    setSelectedWard(null);
+  };
+
+  // When a whole Constituency/Zone is clicked (e.g. "Hebbal", "PulakeshiNagar")
+  const selectConstituency = (region: Region) => {
+    setSelectedRegion(region);
+    setSelectedZone(region.region_name);
+    setSelectedDivision(region.division || "");
+    setSelectedWard(null);
   };
 
   // Changing Main Location
@@ -150,6 +168,8 @@ export const WardProvider: React.FC<{ children: React.ReactNode }> = ({ children
         selectedZone,
         loadingRegions,
         selectWard,
+        selectDivision,
+        selectConstituency,
         setMainLocation,
         setDivision,
         setZone,

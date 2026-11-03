@@ -55,7 +55,7 @@ export const BANGALORE_BBMP_HIERARCHY: LocationConfig = {
           name: "PulakeshiNagar",
           code: "PKN",
           startWard: 69,
-          endWard: 74,
+          endWard: 75,
         },
         {
           name: "SarvagnaNagar",

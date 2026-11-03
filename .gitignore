@@ -33,4 +33,5 @@ postgres.log
 *.sln
 *.sw?
 scratch_check.py
-storage/merged/
+storage/merged/*.xlsx
+storage/merged/*_poles.json

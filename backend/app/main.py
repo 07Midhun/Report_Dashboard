@@ -47,9 +47,19 @@ def on_startup():
 
             db.commit()
 
-            # Auto-seed and verify BBMP hierarchy (2 zones, 7 constituencies, 57 wards)
-            from .services.seed_service import seed_bbmp_hierarchy
-            seed_bbmp_hierarchy(db)
+            # Auto-seed and verify BBMP hierarchy asynchronously so server binds port immediately
+            import threading
+            def run_async_seed():
+                from .database import SessionLocal
+                from .services.seed_service import seed_bbmp_hierarchy
+                try:
+                    s_db = SessionLocal()
+                    seed_bbmp_hierarchy(s_db)
+                    s_db.close()
+                except Exception as ex:
+                    print(f"[Seed] Background hierarchy sync notice: {ex}", flush=True)
+
+            threading.Thread(target=run_async_seed, daemon=True).start()
         finally:
             db.close()
 
@@ -96,7 +106,8 @@ def health_check():
         "status": "healthy",
         "service": "Ward-Wise Pole Management Backend",
         "storage_root": settings.STORAGE_ROOT,
-        "database": "PostgreSQL 18"
+        "database": "PostgreSQL 18",
+        "build_version": "2.1.0"
     }
 
 if __name__ == "__main__":

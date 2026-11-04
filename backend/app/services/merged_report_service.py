@@ -274,8 +274,8 @@ def get_or_create_merged_led_report(
             except Exception:
                 pass
 
-    lamp_file_path = safe_resolve_path(lamp_rep.storage_key) if lamp_rep else None
-    pole_file_path = safe_resolve_path(pole_rep.storage_key) if pole_rep else None
+    lamp_file_path = safe_resolve_path(lamp_rep.storage_key, report=lamp_rep) if lamp_rep else None
+    pole_file_path = safe_resolve_path(pole_rep.storage_key, report=pole_rep) if pole_rep else None
 
     lamp_exists = lamp_file_path is not None and lamp_file_path.is_file()
     pole_exists = pole_file_path is not None and pole_file_path.is_file()

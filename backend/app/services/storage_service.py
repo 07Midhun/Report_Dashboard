@@ -88,12 +88,21 @@ def save_uploaded_file(
 
     # Relative storage key stored in database
     storage_key = str(physical_file_path.resolve())
-    return storage_key, ext, bytes_read, unique_id
 
-def safe_resolve_path(storage_key: str) -> Optional[Path]:
+    # Read binary bytes for database persistence across ephemeral container restarts
+    try:
+        with open(physical_file_path, "rb") as f:
+            file_bytes = f.read()
+    except Exception:
+        file_bytes = None
+
+    return storage_key, ext, bytes_read, unique_id, file_bytes
+
+def safe_resolve_path(storage_key: str, report: Optional[Any] = None) -> Optional[Path]:
     """
     Safely resolves a storage_key to an existing physical Path without throwing an exception.
-    Handles absolute paths, relocated base directories, and relative paths.
+    Handles absolute paths, relocated base directories, relative paths, and automatic
+    restoration from database binary storage if container was restarted.
     """
     if not storage_key:
         return None
@@ -127,11 +136,22 @@ def safe_resolve_path(storage_key: str) -> Optional[Path]:
     if rel_direct.is_file():
         return rel_direct
 
+    # If file was wiped on ephemeral container restart, restore from report.file_data
+    if report and getattr(report, "file_data", None):
+        try:
+            target_p = Path(settings.STORAGE_ROOT) / "reports" / f"report_{report.id}{getattr(report, 'file_extension', '.xlsx') or '.xlsx'}"
+            target_p.parent.mkdir(parents=True, exist_ok=True)
+            with open(target_p, "wb") as f:
+                f.write(report.file_data)
+            return target_p
+        except Exception:
+            pass
+
     return None
 
-def resolve_physical_file(storage_key: str) -> Path:
+def resolve_physical_file(storage_key: str, report: Optional[Any] = None) -> Path:
     """Safely resolves and verifies the existence of a physical file."""
-    resolved = safe_resolve_path(storage_key)
+    resolved = safe_resolve_path(storage_key, report=report)
     if not resolved or not resolved.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

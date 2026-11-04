@@ -134,7 +134,7 @@ def upload_report(
         )
 
     # Save physical file
-    storage_key, ext, file_size, unique_id = save_uploaded_file(file, ward.region_id, ward.id)
+    storage_key, ext, file_size, unique_id, file_bytes = save_uploaded_file(file, ward.region_id, ward.id)
 
     try:
         new_report = Report(
@@ -144,6 +144,7 @@ def upload_report(
             storage_key=storage_key,
             file_extension=ext,
             file_size=file_size,
+            file_data=file_bytes,
             uploaded_by=admin.id
         )
         db.add(new_report)
@@ -155,6 +156,7 @@ def upload_report(
             original_filename=file.filename,
             storage_key=storage_key,
             file_size=file_size,
+            file_data=file_bytes,
             uploaded_by=admin.id,
             version_number=1
         )
@@ -275,7 +277,7 @@ def replace_report(
         return upload_report(ward_id, report_type, file, db, admin)
 
     # Save new physical file
-    storage_key, ext, file_size, unique_id = save_uploaded_file(file, ward.region_id, ward.id)
+    storage_key, ext, file_size, unique_id, file_bytes = save_uploaded_file(file, ward.region_id, ward.id)
 
     try:
         prev_version_number = len(existing.versions)
@@ -286,6 +288,7 @@ def replace_report(
         existing.storage_key = storage_key
         existing.file_extension = ext
         existing.file_size = file_size
+        existing.file_data = file_bytes
         existing.uploaded_by = admin.id
 
         # Record new version
@@ -294,6 +297,7 @@ def replace_report(
             original_filename=file.filename,
             storage_key=storage_key,
             file_size=file_size,
+            file_data=file_bytes,
             uploaded_by=admin.id,
             version_number=new_version_number
         )
@@ -405,7 +409,7 @@ def download_report(
             detail=f"Report with ID {report_id} was not found"
         )
 
-    file_path = resolve_physical_file(report.storage_key)
+    file_path = resolve_physical_file(report.storage_key, report=report)
 
     # Encode filename safely for Content-Disposition
     encoded_filename = urllib.parse.quote(report.original_filename)
@@ -616,8 +620,27 @@ def get_ward_merged_led_summary(
     Returns availability, file metadata, and statistics for the Merged LED Report.
     Accessible to both Admin and Operator.
     """
-    validate_ward_exists(db, ward_id)
-    return get_or_create_merged_led_report(db, ward_id, force_regenerate=force_regenerate)
+    ward = validate_ward_exists(db, ward_id)
+    try:
+        return get_or_create_merged_led_report(db, ward_id, force_regenerate=force_regenerate)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "is_available": False,
+            "ward_id": ward_id,
+            "ward_number": ward.ward_number if ward else f"W{ward_id}",
+            "reason": "Report files were not found on the server. Please click Replace to re-upload them.",
+            "lamp_uploaded": False,
+            "pole_uploaded": False,
+            "lamp_rows_count": 0,
+            "pole_led_rows_count": 0,
+            "total_merged_count": 0,
+            "file_path": None,
+            "filename": None,
+            "file_size": 0,
+            "generated_at": None,
+        }
 
 @router.get("/api/wards/{ward_id}/merged-led-report/data", response_model=ReportDataResponse)
 def get_ward_merged_led_data(
@@ -630,7 +653,18 @@ def get_ward_merged_led_data(
     Accessible to both Admin and Operator.
     """
     validate_ward_exists(db, ward_id)
-    return get_merged_led_table_data(db, ward_id)
+    try:
+        return get_merged_led_table_data(db, ward_id)
+    except Exception as e:
+        return ReportDataResponse(
+            uploaded=False,
+            message=str(e),
+            ward_id=ward_id,
+            report_type="merged_led_report",
+            total_rows=0,
+            columns=[],
+            rows=[]
+        )
 
 @router.get("/api/wards/{ward_id}/merged-led-report/download")
 def download_ward_merged_led_report(

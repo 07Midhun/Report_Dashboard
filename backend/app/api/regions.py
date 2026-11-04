@@ -83,6 +83,18 @@ def list_regions_with_wards(
 import json
 from pathlib import Path
 from ..config import settings
+from ..models.pole import Pole
+from ..models.report import Report
+
+LEGACY_WARD_MAP = {
+    "W61": 1, "W62": 2, "W63": 3, "W64": 4,
+    "W65": 32, "W66": 33, "W67": 34, "W68": 35,
+    "W69": 36, "W70": 37, "W71": 38, "W72": 39,
+    "W73": 40, "W74": 41, "W75": 42,
+    "W76": 43, "W77": 44, "W78": 45, "W79": 46,
+    "W80": 47, "W81": 48, "W82": 49, "W83": 50,
+    "W84": 51, "W85": 52
+}
 
 @router.get("/summary")
 def get_hierarchy_summary(
@@ -93,8 +105,31 @@ def get_hierarchy_summary(
     Returns aggregated lamps and poles counts across all divisions, constituencies, and wards.
     Allows instant lookup of counts when clicking a region (e.g. East) or constituency (e.g. Hebbal).
     """
+    from ..services.seed_service import seed_bbmp_hierarchy
+    if db.query(Region).count() == 0:
+        seed_bbmp_hierarchy(db)
+
     merged_dir = Path(settings.STORAGE_ROOT) / "merged"
     regions = db.query(Region).order_by(Region.region_name).all()
+
+    try:
+        pole_counts = dict(
+            db.query(Pole.ward_id, func.count(Pole.id))
+            .group_by(Pole.ward_id)
+            .all()
+        )
+    except Exception:
+        pole_counts = {}
+
+    try:
+        active_report_counts = dict(
+            db.query(Report.ward_id, func.count(Report.id))
+            .filter(Report.is_active == True)
+            .group_by(Report.ward_id)
+            .all()
+        )
+    except Exception:
+        active_report_counts = {}
 
     divisions_map = {}
     constituencies_map = {}
@@ -105,7 +140,12 @@ def get_hierarchy_summary(
     grand_total_wards = 0
 
     for reg in regions:
-        division_name = getattr(reg, "division", "East") or "East"
+        raw_div = getattr(reg, "division", "") or ""
+        if raw_div.strip().lower() == "bommanahalli" or reg.region_code == "BOM-Z1" or "bommanahalli" in reg.region_name.lower():
+            division_name = "Bommanahalli"
+        else:
+            division_name = "East"
+
         if division_name not in divisions_map:
             divisions_map[division_name] = {
                 "name": division_name,
@@ -125,31 +165,46 @@ def get_hierarchy_summary(
 
         for w in reg.wards:
             grand_total_wards += 1
-            meta_path = merged_dir / f"ward_{w.id}_master_merged_led.json"
+            
+            # Lookup candidate metadata files
+            cand_paths = [
+                merged_dir / f"ward_{w.ward_number}_master_merged_led.json",
+            ]
+            if w.ward_number in LEGACY_WARD_MAP:
+                cand_paths.append(merged_dir / f"ward_{LEGACY_WARD_MAP[w.ward_number]}_master_merged_led.json")
+            cand_paths.append(merged_dir / f"ward_{w.id}_master_merged_led.json")
+
             w_lamp = 0
             w_survey = 0
             w_tot = 0
             is_merged_avail = False
 
-            if meta_path.exists():
-                try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
-                        meta = json.load(f)
-                    w_lamp = meta.get("lamp_rows_count", 0)
-                    w_survey = meta.get("pole_led_rows_count", 0)
-                    w_tot = meta.get("total_merged_count", w_lamp + w_survey)
-                    is_merged_avail = True
-                except Exception:
-                    pass
+            for cp in cand_paths:
+                if cp.exists():
+                    try:
+                        with open(cp, "r", encoding="utf-8") as f:
+                            meta = json.load(f)
+                        w_lamp = meta.get("lamp_rows_count", 0)
+                        w_survey = meta.get("pole_led_rows_count", 0)
+                        w_tot = meta.get("total_merged_count", w_lamp + w_survey)
+                        is_merged_avail = True
+                        break
+                    except Exception:
+                        pass
             
-            if not is_merged_avail and len(w.poles) > 0:
-                w_tot = len(w.poles)
+            # Fallback to DB poles count if survey poles exist without a 2-way merged report
+            p_cnt = pole_counts.get(w.id, len(w.poles))
+            if not is_merged_avail or (w_tot == 0 and w_survey == 0 and p_cnt > 0):
+                if p_cnt > 0:
+                    w_survey = p_cnt
+                    w_tot = p_cnt
+                    is_merged_avail = True
 
             c_installed += w_lamp
             c_surveyed += w_survey
             c_total_poles += w_tot
 
-            active_reps = len([r for r in w.reports if r.is_active])
+            active_reps = active_report_counts.get(w.id, len([r for r in w.reports if r.is_active]))
             wards_summary.append({
                 "id": w.id,
                 "ward_number": w.ward_number,

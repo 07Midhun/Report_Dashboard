@@ -32,6 +32,139 @@ def find_col_idx(headers: list, candidates: list) -> int:
                 return idx
     return -1
 
+LEGACY_WARD_MAP = {
+    "W61": 1, "W62": 2, "W63": 3, "W64": 4,
+    "W65": 32, "W66": 33, "W67": 34, "W68": 35,
+    "W69": 36, "W70": 37, "W71": 38, "W72": 39,
+    "W73": 40, "W74": 41, "W75": 42,
+    "W76": 43, "W77": 44, "W78": 45, "W79": 46,
+    "W80": 47, "W81": 48, "W82": 49, "W83": 50,
+    "W84": 51, "W85": 52
+}
+
+def generate_pole_only_merged_report(
+    ward: Ward,
+    poles: list,
+    output_path: Path,
+    named_output_path: Path,
+    meta_path: Path,
+    named_meta_path: Path,
+    poles_cache_path: Path
+) -> Dict[str, Any]:
+    """Generates a Master Merged LED Report when only surveyed poles are present (e.g. Bommanahalli wards)."""
+    wb_out = openpyxl.Workbook()
+    sheet_out = wb_out.active
+    sheet_out.title = "Master Merged LED Report"
+
+    row_1 = [
+        "Project Telemetry", "Bangalore (BBMP)", "Streetlight Management", 
+        "Ward LED Report", "Inventory", "Surveyed Poles"
+    ]
+    row_2 = [
+        "Sr #", "Corporation", "Constituency", "Ward", "Switch Point No",
+        "Pole Number", "Latitude", "Longitude", "Road Category", "Road Type",
+        "Pole Type", "Pole Condition", "Pole Height", "Pole Span", "Location",
+        "Bracket Mounting Height", "Incoming Transmission Line", "Incoming Transmission Type",
+        "Arm Count", "Arm Length", "Arm Condition", "Lamp Condition", "Lamp Type",
+        "Lamp Wattage", "Light Required?", "Surveyed By", "Survey Date", "Source"
+    ]
+    sheet_out.append(row_1)
+    sheet_out.append(row_2)
+
+    poles_cache = []
+    sr_no = 1
+    for p in poles:
+        attrs = getattr(p, "additional_attributes", None) or {}
+        sp = attrs.get("Switch Point No", "")
+        arm_cnt = attrs.get("Arm Count", "1")
+        p_num = getattr(p, "pole_number", f"P{sr_no:04d}")
+        pole_display = f"{p_num} ({arm_cnt})" if arm_cnt and str(arm_cnt) != "0" else p_num
+        row = [
+            sr_no,
+            "Bangalore (BBMP)",
+            getattr(ward, "zone_name", "Bommanahalli-Z1"),
+            f"Ward {ward.ward_number}",
+            sp,
+            pole_display,
+            getattr(p, "latitude", None),
+            getattr(p, "longitude", None),
+            attrs.get("Road Category", "-"),
+            attrs.get("Road Type", "-"),
+            attrs.get("PoleType", attrs.get("Pole Type", "-")),
+            attrs.get("Pole Condition", "Good"),
+            attrs.get("Pole Height", "-"),
+            attrs.get("Pole Span", "-"),
+            attrs.get("Location", "-"),
+            attrs.get("Bracket Mounting Height", "-"),
+            attrs.get("Incoming Transmission Line", "-"),
+            attrs.get("Incoming Transmission Type", "-"),
+            arm_cnt,
+            attrs.get("Arm Length", "-"),
+            attrs.get("Arm Condition", "Good"),
+            attrs.get("Lamp Condition", "Working"),
+            attrs.get("Lamp Type", "LED"),
+            attrs.get("Lamp Wattage", "-"),
+            attrs.get("Light Required?", "-"),
+            attrs.get("Surveyed By", "-"),
+            attrs.get("Survey Date", "-"),
+            "Extracted Surveyed LED"
+        ]
+        sheet_out.append(row)
+        poles_cache.append({
+            "id": getattr(p, "id", sr_no),
+            "pole_number": pole_display,
+            "latitude": float(p.latitude) if getattr(p, "latitude", None) else 0.0,
+            "longitude": float(p.longitude) if getattr(p, "longitude", None) else 0.0,
+            "connectivity_status": getattr(p, "connectivity_status", "connected"),
+            "category": "surveyed_led",
+            "additional_attributes": {
+                **attrs,
+                "Pole Number": pole_display,
+                "Source": "Extracted Surveyed LED"
+            }
+        })
+        sr_no += 1
+
+    wb_out.save(str(output_path))
+    if output_path != named_output_path:
+        wb_out.save(str(named_output_path))
+    wb_out.close()
+
+    total_count = len(poles)
+    file_size = output_path.stat().st_size
+    now_dt = datetime.utcnow().isoformat()
+    meta_content = {
+        "lamp_rows_count": 0,
+        "pole_led_rows_count": total_count,
+        "total_merged_count": total_count,
+        "ignored_in_lamp_count": 0,
+        "file_size": file_size,
+        "generated_at": now_dt,
+        "algorithm_version": 2
+    }
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta_content, f, indent=2)
+    if meta_path != named_meta_path:
+        with open(named_meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta_content, f, indent=2)
+    with open(poles_cache_path, "w", encoding="utf-8") as f:
+        json.dump(poles_cache, f, indent=2)
+
+    return {
+        "is_available": True,
+        "ward_id": ward.id,
+        "ward_number": ward.ward_number,
+        "lamp_uploaded": False,
+        "pole_uploaded": True,
+        "lamp_rows_count": 0,
+        "pole_led_rows_count": total_count,
+        "total_merged_count": total_count,
+        "file_path": str(output_path),
+        "filename": f"Ward_{ward.ward_number}_Master_Merged_LED_Report.xlsx",
+        "file_size": file_size,
+        "generated_at": now_dt
+    }
+
 def get_or_create_merged_led_report(
     db: Session, 
     ward_id: int, 
@@ -49,6 +182,72 @@ def get_or_create_merged_led_report(
 
     region = db.query(Region).filter(Region.id == ward.region_id).first()
 
+    merged_dir = get_merged_storage_dir()
+    output_filename = f"Ward_{ward.ward_number}_Master_Merged_LED_Report.xlsx"
+    named_output_path = merged_dir / f"ward_{ward.ward_number}_master_merged_led.xlsx"
+    named_meta_path = merged_dir / f"ward_{ward.ward_number}_master_merged_led.json"
+    output_path = merged_dir / f"ward_{ward_id}_master_merged_led.xlsx"
+    meta_path = merged_dir / f"ward_{ward_id}_master_merged_led.json"
+    poles_cache_path = merged_dir / f"ward_{ward_id}_master_merged_poles.json"
+
+    # Candidate paths for lookup
+    cand_metas = [
+        named_meta_path,
+        meta_path
+    ]
+    if ward.ward_number in LEGACY_WARD_MAP:
+        cand_metas.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.json")
+
+    cand_outputs = [
+        named_output_path,
+        output_path
+    ]
+    if ward.ward_number in LEGACY_WARD_MAP:
+        cand_outputs.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.xlsx")
+
+    # Return cached result if valid and meta exists and force_regenerate is False
+    if not force_regenerate:
+        found_meta = None
+        for cm in cand_metas:
+            if cm.exists():
+                found_meta = cm
+                break
+        
+        found_output = None
+        for co in cand_outputs:
+            if co.exists():
+                found_output = co
+                break
+
+        if found_meta:
+            try:
+                with open(found_meta, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                lamp_cnt = meta.get("lamp_rows_count", 0)
+                pole_cnt = meta.get("pole_led_rows_count", 0)
+                tot_cnt = meta.get("total_merged_count", lamp_cnt + pole_cnt)
+                
+                # If cached output exists or we can point to it
+                resolved_output = found_output or output_path
+                file_sz = meta.get("file_size", resolved_output.stat().st_size if resolved_output.exists() else 0)
+
+                return {
+                    "is_available": True,
+                    "ward_id": ward_id,
+                    "ward_number": ward.ward_number,
+                    "lamp_uploaded": lamp_cnt > 0,
+                    "pole_uploaded": pole_cnt > 0,
+                    "lamp_rows_count": lamp_cnt,
+                    "pole_led_rows_count": pole_cnt,
+                    "total_merged_count": tot_cnt,
+                    "file_path": str(resolved_output) if resolved_output.exists() else str(output_path),
+                    "filename": output_filename,
+                    "file_size": file_sz,
+                    "generated_at": meta.get("generated_at"),
+                }
+            except Exception:
+                pass
+
     lamp_rep = db.query(Report).filter(
         Report.ward_id == ward_id,
         Report.report_type == "lamp_installation",
@@ -61,32 +260,23 @@ def get_or_create_merged_led_report(
         Report.is_active == True
     ).first()
 
-    if not lamp_rep or not pole_rep:
-        return {
-            "is_available": False,
-            "ward_id": ward_id,
-            "ward_number": ward.ward_number,
-            "reason": "Both Lamp Installation Report and Pole Survey Report must be uploaded to generate the Merged LED Report.",
-            "lamp_uploaded": lamp_rep is not None,
-            "pole_uploaded": pole_rep is not None,
-            "lamp_rows_count": 0,
-            "pole_led_rows_count": 0,
-            "total_merged_count": 0,
-            "file_path": None,
-            "filename": None,
-            "file_size": 0,
-            "generated_at": None,
-        }
+    lamp_file_path = safe_resolve_path(lamp_rep.storage_key) if lamp_rep else None
+    pole_file_path = safe_resolve_path(pole_rep.storage_key) if pole_rep else None
 
-    lamp_file_path = safe_resolve_path(lamp_rep.storage_key)
-    pole_file_path = safe_resolve_path(pole_rep.storage_key)
+    # Handle wards with only surveyed poles (e.g. Bommanahalli)
+    poles_in_db = ward.poles if hasattr(ward, "poles") else []
+    if (not lamp_file_path or not lamp_rep) and (pole_rep or len(poles_in_db) > 0):
+        if len(poles_in_db) > 0:
+            return generate_pole_only_merged_report(
+                ward, poles_in_db, output_path, named_output_path, meta_path, named_meta_path, poles_cache_path
+            )
 
     if not lamp_file_path or not pole_file_path:
         return {
             "is_available": False,
             "ward_id": ward_id,
             "ward_number": ward.ward_number,
-            "reason": "Uploaded report file(s) could not be located on the filesystem. Please verify or re-upload both reports.",
+            "reason": "Both Lamp Installation Report and Pole Survey Report must be uploaded to generate the Merged LED Report.",
             "lamp_uploaded": lamp_file_path is not None,
             "pole_uploaded": pole_file_path is not None,
             "lamp_rows_count": 0,
@@ -97,47 +287,6 @@ def get_or_create_merged_led_report(
             "file_size": 0,
             "generated_at": None,
         }
-
-    merged_dir = get_merged_storage_dir()
-    output_filename = f"Ward_{ward.ward_number}_Master_Merged_LED_Report.xlsx"
-    output_path = merged_dir / f"ward_{ward_id}_master_merged_led.xlsx"
-    meta_path = merged_dir / f"ward_{ward_id}_master_merged_led.json"
-    poles_cache_path = merged_dir / f"ward_{ward_id}_master_merged_poles.json"
-
-    # Check source file modification times
-    source_latest_mtime = max(
-        os.path.getmtime(lamp_file_path),
-        os.path.getmtime(pole_file_path),
-    )
-
-    # Return cached result if valid and meta exists and has version 2 (with comparison extraction)
-    if (
-        not force_regenerate 
-        and output_path.exists() 
-        and meta_path.exists()
-        and poles_cache_path.exists()
-        and os.path.getmtime(output_path) >= source_latest_mtime
-    ):
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-            if meta.get("algorithm_version") == 2:
-                return {
-                    "is_available": True,
-                    "ward_id": ward_id,
-                    "ward_number": ward.ward_number,
-                    "lamp_uploaded": True,
-                    "pole_uploaded": True,
-                    "lamp_rows_count": meta.get("lamp_rows_count", 0),
-                    "pole_led_rows_count": meta.get("pole_led_rows_count", 0),
-                    "total_merged_count": meta.get("total_merged_count", 0),
-                    "file_path": str(output_path),
-                    "filename": output_filename,
-                    "file_size": meta.get("file_size", os.path.getsize(output_path)),
-                    "generated_at": meta.get("generated_at"),
-                }
-        except Exception:
-            pass
 
     # 1. Read Lamp Report (LED Report)
     wb_lamp = openpyxl.load_workbook(lamp_file_path, data_only=True)
@@ -438,6 +587,11 @@ def get_or_create_merged_led_report(
 
     # Save merged file
     wb_out.save(str(output_path))
+    if output_path != named_output_path:
+        try:
+            wb_out.save(str(named_output_path))
+        except Exception:
+            pass
     wb_out.close()
 
     total_count = lamp_rows_count + added_pole_led_count
@@ -445,17 +599,21 @@ def get_or_create_merged_led_report(
     now_dt = datetime.utcnow().isoformat()
 
     # Save metadata sidecar with algorithm_version = 2
+    meta_dict = {
+        "lamp_rows_count": lamp_rows_count,
+        "pole_led_rows_count": added_pole_led_count,
+        "total_merged_count": total_count,
+        "ignored_in_lamp_count": ignored_present_in_lamp_count,
+        "file_size": file_size,
+        "generated_at": now_dt,
+        "algorithm_version": 2
+    }
     try:
         with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "lamp_rows_count": lamp_rows_count,
-                "pole_led_rows_count": added_pole_led_count,
-                "total_merged_count": total_count,
-                "ignored_in_lamp_count": ignored_present_in_lamp_count,
-                "file_size": file_size,
-                "generated_at": now_dt,
-                "algorithm_version": 2
-            }, f, indent=2)
+            json.dump(meta_dict, f, indent=2)
+        if meta_path != named_meta_path:
+            with open(named_meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta_dict, f, indent=2)
     except Exception:
         pass
 
@@ -495,7 +653,29 @@ def get_merged_led_table_data(db: Session, ward_id: int) -> ReportDataResponse:
             rows=[]
         )
 
-    file_path = summary["file_path"]
+    file_path = summary.get("file_path")
+    if not file_path or not os.path.exists(file_path):
+        ward = db.query(Ward).filter(Ward.id == ward_id).first()
+        if ward:
+            merged_dir = get_merged_storage_dir()
+            candidate = merged_dir / f"ward_{ward.ward_number}_master_merged_led.xlsx"
+            if candidate.exists():
+                file_path = str(candidate)
+            else:
+                summary = get_or_create_merged_led_report(db, ward_id, force_regenerate=True)
+                file_path = summary.get("file_path")
+
+    if not file_path or not os.path.exists(file_path):
+        return ReportDataResponse(
+            uploaded=False,
+            message="Merged LED report file could not be accessed.",
+            ward_id=ward_id,
+            report_type="merged_led_report",
+            total_rows=0,
+            columns=[],
+            rows=[]
+        )
+
     try:
         # Use header=1 to capture row 2 headers ('Sr #', 'Corporation', 'Constituency', etc.)
         df = pd.read_excel(file_path, header=1)

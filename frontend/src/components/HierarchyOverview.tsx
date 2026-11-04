@@ -46,8 +46,13 @@ export const HierarchyOverview: React.FC = () => {
   const totalConstituencies = summaryData?.total_constituencies ?? 7;
   const totalWards = summaryData?.total_wards ?? 57;
 
-  // Active division data
-  const divisionData = selectedDivision && summaryData?.divisions ? summaryData.divisions[selectedDivision] : null;
+  // Active division data with case-insensitive matching
+  const divisionData = selectedDivision && summaryData?.divisions
+    ? (summaryData.divisions[selectedDivision] ||
+       Object.values(summaryData.divisions).find(
+         (d) => d.name.toLowerCase() === selectedDivision.toLowerCase()
+       ) || null)
+    : null;
 
   // Active constituency data
   const constituencyData = selectedRegion && summaryData?.constituencies ? summaryData.constituencies[selectedRegion.region_name] : null;
@@ -290,20 +295,26 @@ export const HierarchyOverview: React.FC = () => {
   // VIEW 2: REGION / DIVISION VIEW (e.g. East or Bommanahalli)
   // =========================================================================
   if (selectedDivision) {
-    const dLamps = divisionData?.installed_lamps ?? 0;
-    const dSurvey = divisionData?.surveyed_leds ?? 0;
-    const dTotal = divisionData?.total_poles ?? (dLamps + dSurvey);
-    const dConstituencyCount = divisionData?.total_constituencies ?? 0;
-    const dWardCount = divisionData?.total_wards ?? 0;
+    const selDiv = (selectedDivision || "").trim().toLowerCase();
 
-    let constituenciesInDiv = regions.filter(
-      (r) => (r.division || "East").toLowerCase() === selectedDivision.toLowerCase()
-    );
+    let constituenciesInDiv = regions.filter((r) => {
+      const div = (r.division || "").trim().toLowerCase();
+      if (div === selDiv) return true;
+      if (selDiv === "bommanahalli" && (r.region_code === "BOM-Z1" || r.region_name.toLowerCase().includes("bommanahalli"))) return true;
+      if (selDiv === "east" && (r.region_code !== "BOM-Z1" && !r.region_name.toLowerCase().includes("bommanahalli"))) return true;
+      return false;
+    });
 
     // Fallback from summaryData if regions has not loaded yet
     if (constituenciesInDiv.length === 0 && summaryData?.constituencies) {
       constituenciesInDiv = Object.values(summaryData.constituencies)
-        .filter((c) => (c.division || "East").toLowerCase() === selectedDivision.toLowerCase())
+        .filter((c) => {
+          const div = (c.division || "").trim().toLowerCase();
+          if (div === selDiv) return true;
+          if (selDiv === "bommanahalli" && (c.code === "BOM-Z1" || c.name.toLowerCase().includes("bommanahalli"))) return true;
+          if (selDiv === "east" && (c.code !== "BOM-Z1" && !c.name.toLowerCase().includes("bommanahalli"))) return true;
+          return false;
+        })
         .map((c) => ({
           id: c.id,
           region_code: c.code,
@@ -326,6 +337,21 @@ export const HierarchyOverview: React.FC = () => {
           }))
         }));
     }
+
+    const dLamps = divisionData?.installed_lamps ?? 
+      (summaryData?.constituencies 
+        ? constituenciesInDiv.reduce((acc, c) => acc + (summaryData.constituencies[c.region_name]?.installed_lamps || 0), 0)
+        : 0);
+    const dSurvey = divisionData?.surveyed_leds ?? 
+      (summaryData?.constituencies 
+        ? constituenciesInDiv.reduce((acc, c) => acc + (summaryData.constituencies[c.region_name]?.surveyed_leds || 0), 0)
+        : 0);
+    const dTotal = divisionData?.total_poles ?? 
+      (summaryData?.constituencies 
+        ? constituenciesInDiv.reduce((acc, c) => acc + (summaryData.constituencies[c.region_name]?.total_poles || 0), 0)
+        : (dLamps + dSurvey));
+    const dConstituencyCount = divisionData?.total_constituencies ?? constituenciesInDiv.length;
+    const dWardCount = divisionData?.total_wards ?? constituenciesInDiv.reduce((acc, c) => acc + c.wards.length, 0);
 
     // Flatten all constituent wards with their specific telemetry
     const allWardsInDiv = constituenciesInDiv.flatMap((c) => 
@@ -623,9 +649,17 @@ export const HierarchyOverview: React.FC = () => {
   // =========================================================================
   // VIEW 3: HOME VIEW (2 Zones, 7 Constituencies, 57 Wards + Grand Totals)
   // =========================================================================
-  const grandLamps = summaryData?.total_installed_lamps ?? 0;
-  const grandSurvey = summaryData?.total_surveyed_leds ?? 0;
-  const grandPoles = summaryData?.total_poles ?? (grandLamps + grandSurvey);
+  let grandLamps = summaryData?.total_installed_lamps ?? 0;
+  let grandSurvey = summaryData?.total_surveyed_leds ?? 0;
+  let grandPoles = summaryData?.total_poles ?? (grandLamps + grandSurvey);
+
+  if (grandPoles === 0 && summaryData?.divisions) {
+    Object.values(summaryData.divisions).forEach((d) => {
+      grandLamps += d.installed_lamps || 0;
+      grandSurvey += d.surveyed_leds || 0;
+      grandPoles += d.total_poles || 0;
+    });
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 bg-slate-50">
@@ -711,7 +745,7 @@ export const HierarchyOverview: React.FC = () => {
                 {totalWards}
               </span>
               <span className="text-xs font-semibold text-emerald-700">
-                Wards (Including W75)
+                Wards
               </span>
             </div>
           </div>

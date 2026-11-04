@@ -81,7 +81,7 @@ export const MergedLedReportCard: React.FC<Props> = ({
     }
   };
 
-  const isAvailable = summary?.is_available === true && summary?.ward_id === wardId;
+  const isAvailable = summary?.is_available === true && (summary?.ward_id === wardId || summary?.ward_number === wardNumber);
 
   return (
     <div className="bg-gradient-to-br from-white via-teal-50/20 to-emerald-50/30 rounded-2xl border-2 border-teal-500/30 shadow-md hover:shadow-lg transition overflow-hidden">
@@ -123,7 +123,7 @@ export const MergedLedReportCard: React.FC<Props> = ({
           ) : (
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
               <AlertCircle className="w-3.5 h-3.5 mr-1.5 text-amber-600" />
-              Requires Lamp &amp; Pole Reports
+              {summary?.reason && summary.reason.length < 35 ? summary.reason : "Requires Lamp or Pole Reports"}
             </span>
           )}
 
@@ -155,9 +155,7 @@ export const MergedLedReportCard: React.FC<Props> = ({
             </span>
             <div className="flex items-baseline space-x-1.5 mt-1">
               <span className="text-xl font-black text-slate-800 font-mono">
-                {summary?.lamp_rows_count !== null && summary?.lamp_rows_count !== undefined 
-                  ? summary.lamp_rows_count.toLocaleString() 
-                  : "..."}
+                {loading ? "..." : (summary?.lamp_rows_count ?? 0).toLocaleString()}
               </span>
               <span className="text-xs text-slate-400 font-medium">poles</span>
             </div>
@@ -171,9 +169,7 @@ export const MergedLedReportCard: React.FC<Props> = ({
             </span>
             <div className="flex items-baseline space-x-1.5 mt-1">
               <span className="text-xl font-black text-emerald-600 font-mono">
-                + {summary?.pole_led_rows_count !== null && summary?.pole_led_rows_count !== undefined 
-                    ? summary.pole_led_rows_count.toLocaleString() 
-                    : "..."}
+                + {loading ? "..." : (summary?.pole_led_rows_count ?? 0).toLocaleString()}
               </span>
               <span className="text-xs text-slate-400 font-medium">poles</span>
             </div>
@@ -187,7 +183,7 @@ export const MergedLedReportCard: React.FC<Props> = ({
             </span>
             <div className="flex items-baseline space-x-1.5 mt-1">
               <span className="text-2xl font-black text-white font-mono">
-                {summary?.total_merged_count?.toLocaleString() || "0"}
+                {loading ? "..." : (summary?.total_merged_count ?? 0).toLocaleString()}
               </span>
               <span className="text-xs text-teal-200 font-medium">Total LEDs</span>
             </div>

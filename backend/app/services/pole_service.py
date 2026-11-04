@@ -408,6 +408,13 @@ def import_poles_for_ward(
         db.add(audit)
         db.commit()
 
+        # Synchronize and regenerate merged report cache so map and stats update immediately
+        try:
+            from .merged_report_service import get_or_create_merged_led_report
+            get_or_create_merged_led_report(db, ward_id, force_regenerate=True)
+        except Exception:
+            pass
+
         return {
             "success": True,
             "ward_id": ward_id,

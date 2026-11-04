@@ -7,13 +7,13 @@ from ..schemas.pole import ColumnMappingConfig
 # Synonyms for auto-detection
 POLE_NUMBER_CANDIDATES = [
     "pole number", "pole no.", "pole no", "pole_number", "pole_no", 
-    "pole id", "poleid", "new pole number", "panel uid", "uid"
+    "pole id", "poleid", "pole_id", "new pole number", "panel uid", "uid", "pole", "lamp id", "lamp_id"
 ]
 LATITUDE_CANDIDATES = [
-    "latitude", "lat", "latitude (deg)", "pole_latitude", "y"
+    "latitude", "lat", "latitude (deg)", "pole_latitude", "y", "lat."
 ]
 LONGITUDE_CANDIDATES = [
-    "longitude", "long", "lng", "lon", "longitude (deg)", "pole_longitude", "x"
+    "longitude", "long", "lng", "lon", "longitude (deg)", "pole_longitude", "x", "long."
 ]
 STATUS_CANDIDATES = [
     "connectivity status", "connectivity", "light status", "status", 
@@ -131,15 +131,36 @@ def extract_poles_from_excel(
     if not os.path.isfile(file_path):
         raise FileNotFoundError(f"Excel file not found at {file_path}")
 
-    # Load dataframe using openpyxl or pandas
-    df = pd.read_excel(file_path, sheet_name=0, dtype=object)
-    columns = [str(col) for col in df.columns]
-    mapping = detect_column_mappings(columns, custom_mapping)
+    # Dynamically detect header row by testing rows 0 to 4
+    df = None
+    columns = []
+    mapping = {}
+    pole_col = None
 
-    pole_col = mapping["pole_number"]
-    lat_col = mapping["latitude"]
-    lon_col = mapping["longitude"]
-    status_col = mapping["status"]
+    for h in range(5):
+        try:
+            temp_df = pd.read_excel(file_path, sheet_name=0, header=h, dtype=object)
+            temp_cols = [str(col) for col in temp_df.columns]
+            temp_mapping = detect_column_mappings(temp_cols, custom_mapping)
+            if temp_mapping.get("pole_number"):
+                df = temp_df
+                columns = temp_cols
+                mapping = temp_mapping
+                pole_col = temp_mapping["pole_number"]
+                break
+        except Exception:
+            continue
+
+    if df is None or not pole_col:
+        # Fallback to standard row 0
+        df = pd.read_excel(file_path, sheet_name=0, dtype=object)
+        columns = [str(col) for col in df.columns]
+        mapping = detect_column_mappings(columns, custom_mapping)
+        pole_col = mapping.get("pole_number")
+
+    lat_col = mapping.get("latitude")
+    lon_col = mapping.get("longitude")
+    status_col = mapping.get("status")
 
     if not pole_col:
         raise ValueError(f"Could not identify a Pole Number column in workbook. Available columns: {columns}")

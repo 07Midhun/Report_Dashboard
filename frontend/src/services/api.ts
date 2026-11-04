@@ -7,6 +7,7 @@ const API_BASE_URL = (rawApiUrl.startsWith("http://") || rawApiUrl.startsWith("h
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 30000, // 30 seconds max timeout so requests never hang indefinitely
   headers: {
     "Content-Type": "application/json",
   },

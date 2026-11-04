@@ -19,24 +19,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    let isMounted = true;
     const initializeAuth = async () => {
       const savedToken = localStorage.getItem("schnell_token");
       if (savedToken) {
         try {
-          const profile = await api.getMe();
-          setUser(profile);
-          setToken(savedToken);
+          // Race api.getMe() with a 10-second timeout so app never hangs
+          const profilePromise = api.getMe();
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Auth timeout")), 10000)
+          );
+          const profile = (await Promise.race([profilePromise, timeoutPromise])) as User;
+          if (isMounted) {
+            setUser(profile);
+            setToken(savedToken);
+          }
         } catch (err) {
-          localStorage.removeItem("schnell_token");
-          localStorage.removeItem("schnell_user");
-          setUser(null);
-          setToken(null);
+          if (isMounted) {
+            localStorage.removeItem("schnell_token");
+            localStorage.removeItem("schnell_user");
+            setUser(null);
+            setToken(null);
+          }
         }
       }
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     };
 
     initializeAuth();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const login = (newToken: string, newUser: User) => {

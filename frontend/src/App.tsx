@@ -9,17 +9,41 @@ import { OperatorReportsDashboard } from "./components/OperatorReportsDashboard"
 import { Activity } from "lucide-react";
 
 const AppContent: React.FC = () => {
-  const { user, token, loading } = useAuth();
+  const { user, token, loading, logout } = useAuth();
+  const [showSlowNotice, setShowSlowNotice] = React.useState(false);
+
+  React.useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    if (loading) {
+      timer = setTimeout(() => {
+        setShowSlowNotice(true);
+      }, 4000);
+    }
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center space-y-4 text-white">
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 space-y-4 text-white">
         <div className="w-14 h-14 rounded-2xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center animate-pulse shadow-lg text-teal-300">
           <Activity className="w-8 h-8 animate-spin" />
         </div>
-        <p className="text-sm font-medium tracking-wide text-teal-200">
+        <p className="text-base font-semibold tracking-wide text-teal-200">
           Loading Schnell Dashboard...
         </p>
+        {showSlowNotice && (
+          <div className="flex flex-col items-center space-y-3 max-w-sm text-center text-xs text-slate-400 animate-fadeIn">
+            <p>
+              Waking up backend server... Render free instances spin down after 15 minutes of inactivity and take ~45s to boot.
+            </p>
+            <button
+              onClick={() => logout()}
+              className="px-3 py-1.5 rounded-lg bg-teal-600/30 hover:bg-teal-600/50 text-teal-200 text-xs border border-teal-500/40 transition"
+            >
+              Continue to Login Screen
+            </button>
+          </div>
+        )}
       </div>
     );
   }

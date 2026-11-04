@@ -25,34 +25,41 @@ def extract_lamp_report_count_from_file(file_path: Path) -> int:
         import openpyxl
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
         sheet = wb.active
-        rows_iter = sheet.iter_rows(values_only=True)
-        row_1 = next(rows_iter, None)
-        row_2 = next(rows_iter, None)
         
-        headers = list(row_2) if row_2 else (list(row_1) if row_1 else [])
-        p_col = -1
-        for idx, h in enumerate(headers):
-            if h and any(k in str(h).strip().lower() for k in ["pole number", "pole id", "poleid", "pole_number", "pole no", "lamp id"]):
-                p_col = idx
-                break
-        if p_col < 0:
-            p_col = 5 if len(headers) > 5 else 0
-
-        cnt = 0
-        for row in rows_iter:
-            if not row:
-                continue
-            val = row[p_col] if len(row) > p_col and row[p_col] is not None else None
-            val_str = str(val).strip() if val is not None else ""
-            if not val_str or val_str.lower() in ("none", "-", "nan"):
-                if any(c is not None and str(c).strip() not in ("", "none", "-", "nan") for c in row):
-                    cnt += 1
-                continue
-            cnt += 1
+        all_rows = []
+        for r in sheet.iter_rows(values_only=True):
+            if r and any(c is not None and str(c).strip() not in ("", "none", "-", "nan") for c in r):
+                all_rows.append(r)
         wb.close()
-        return cnt
+        
+        if not all_rows:
+            return 0
+
+        header_keywords = ["pole", "lamp", "sl", "s.no", "id", "watt", "lat", "long", "lng", "road", "ward", "light", "status"]
+        
+        header_idx = 0
+        best_score = 0
+        for i in range(min(5, len(all_rows))):
+            score = sum(1 for c in all_rows[i] if c and any(k in str(c).strip().lower() for k in header_keywords))
+            if score > best_score:
+                best_score = score
+                header_idx = i
+
+        data_rows = all_rows[header_idx + 1:]
+        valid_cnt = 0
+        for row in data_rows:
+            if any(c is not None and str(c).strip() not in ("", "none", "-", "nan") for c in row):
+                valid_cnt += 1
+
+        return valid_cnt
     except Exception:
-        return 0
+        try:
+            import pandas as pd
+            df = pd.read_excel(file_path)
+            df = df.dropna(how="all")
+            return len(df)
+        except Exception:
+            return 0
 
 def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
     """Computes connectivity and coordinate summary for the selected ward, prioritizing merged data."""

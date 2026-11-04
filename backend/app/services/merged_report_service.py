@@ -295,18 +295,24 @@ def get_or_create_merged_led_report(
     lamp_rows_count = 0
     poles_cache = []
 
-    # Determine header rows (row 1 category headers, row 2 column headers)
-    lamp_rows_iter = sheet_lamp.iter_rows(values_only=True)
-    row_1 = next(lamp_rows_iter, None)
-    row_2 = next(lamp_rows_iter, None)
+    # Determine header rows dynamically (supports single header row or banner + header rows)
+    all_lamp_raw = list(sheet_lamp.iter_rows(values_only=True))
+    header_keywords = ["pole", "lamp", "sl", "s.no", "id", "watt", "lat", "long", "lng", "road", "ward", "light", "status"]
 
-    if row_1:
-        sheet_out.append(list(row_1))
-    if row_2:
-        sheet_out.append(list(row_2))
-        lamp_headers = list(row_2)
-    else:
-        lamp_headers = []
+    header_idx = 0
+    best_score = 0
+    for i in range(min(5, len(all_lamp_raw))):
+        score = sum(1 for c in all_lamp_raw[i] if c and any(k in str(c).strip().lower() for k in header_keywords))
+        if score > best_score:
+            best_score = score
+            header_idx = i
+
+    for i in range(header_idx + 1):
+        if i < len(all_lamp_raw) and all_lamp_raw[i]:
+            sheet_out.append(list(all_lamp_raw[i]))
+
+    lamp_headers = list(all_lamp_raw[header_idx]) if header_idx < len(all_lamp_raw) else []
+    lamp_data_rows = all_lamp_raw[header_idx + 1:]
     
     num_cols = len(lamp_headers) if lamp_headers else 27
     lamp_p_c = find_col_idx(lamp_headers, ["pole number", "pole id", "poleid", "pole_number"])
@@ -322,15 +328,22 @@ def get_or_create_merged_led_report(
     lamp_road_c = find_col_idx(lamp_headers, ["road category", "road type"])
 
     # Copy only VALID rows from Lamp Report (skip trailing blank / empty rows)
-    for row in lamp_rows_iter:
+    for row in lamp_data_rows:
         if not row:
             continue
         pole_val = row[lamp_p_c] if len(row) > lamp_p_c and row[lamp_p_c] is not None else None
         pole_str = str(pole_val).strip() if pole_val is not None else ""
         
-        # If pole number is empty, null, or placeholder '-', skip it
+        # If pole number is empty, check if lamp ID is available or row has valid data
         if not pole_str or pole_str.lower() in ("none", "-", "nan"):
-            continue
+            if lamp_id_c >= 0 and len(row) > lamp_id_c and row[lamp_id_c] is not None:
+                pole_str = str(row[lamp_id_c]).strip()
+            if not pole_str or pole_str.lower() in ("none", "-", "nan"):
+                # If row has other valid data cells, assign a fallback identifier
+                if any(c is not None and str(c).strip() not in ("", "none", "-", "nan") for c in row):
+                    pole_str = f"LP-W{ward.ward_number}-{lamp_rows_count + 1}"
+                else:
+                    continue
 
         sheet_out.append(list(row))
         lamp_rows_count += 1

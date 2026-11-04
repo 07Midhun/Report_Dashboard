@@ -199,7 +199,34 @@ def get_or_create_merged_led_report(
     if ward.ward_number in LEGACY_WARD_MAP:
         cand_outputs.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.xlsx")
 
-    # Return cached result if valid and meta exists and force_regenerate is False
+    # Check active reports uploaded for this ward
+    active_reports = db.query(Report).filter(
+        Report.ward_id == ward_id,
+        Report.is_active == True
+    ).all()
+
+    lamp_rep = next((r for r in active_reports if r.report_type == "lamp_installation"), None)
+    pole_rep = next((r for r in active_reports if r.report_type == "pole_report"), None)
+
+    # Strictly require at least one report uploaded to produce merged data
+    if not lamp_rep and not pole_rep:
+        return {
+            "is_available": False,
+            "ward_id": ward_id,
+            "ward_number": ward.ward_number,
+            "reason": "No reports uploaded for this ward yet. Please upload the Lamp Installation Report and Pole Survey Report.",
+            "lamp_uploaded": False,
+            "pole_uploaded": False,
+            "lamp_rows_count": 0,
+            "pole_led_rows_count": 0,
+            "total_merged_count": 0,
+            "file_path": None,
+            "filename": None,
+            "file_size": 0,
+            "generated_at": None,
+        }
+
+    # Return cached result only if active reports exist and force_regenerate is False
     if not force_regenerate:
         found_meta = None
         for cm in cand_metas:
@@ -221,58 +248,38 @@ def get_or_create_merged_led_report(
                 pole_cnt = meta.get("pole_led_rows_count", 0)
                 tot_cnt = meta.get("total_merged_count", lamp_cnt + pole_cnt)
                 
-                # If cached output exists or we can point to it
-                resolved_output = found_output or output_path
-                file_sz = meta.get("file_size", resolved_output.stat().st_size if resolved_output.exists() else 0)
+                if tot_cnt > 0:
+                    resolved_output = found_output or output_path
+                    file_sz = meta.get("file_size", resolved_output.stat().st_size if resolved_output.exists() else 0)
 
-                return {
-                    "is_available": True,
-                    "ward_id": ward_id,
-                    "ward_number": ward.ward_number,
-                    "lamp_uploaded": lamp_cnt > 0,
-                    "pole_uploaded": pole_cnt > 0,
-                    "lamp_rows_count": lamp_cnt,
-                    "pole_led_rows_count": pole_cnt,
-                    "total_merged_count": tot_cnt,
-                    "file_path": str(resolved_output) if resolved_output.exists() else str(output_path),
-                    "filename": output_filename,
-                    "file_size": file_sz,
-                    "generated_at": meta.get("generated_at"),
-                }
+                    return {
+                        "is_available": True,
+                        "ward_id": ward_id,
+                        "ward_number": ward.ward_number,
+                        "lamp_uploaded": lamp_rep is not None,
+                        "pole_uploaded": pole_rep is not None,
+                        "lamp_rows_count": lamp_cnt,
+                        "pole_led_rows_count": pole_cnt,
+                        "total_merged_count": tot_cnt,
+                        "file_path": str(resolved_output) if resolved_output.exists() else str(output_path),
+                        "filename": output_filename,
+                        "file_size": file_sz,
+                        "generated_at": meta.get("generated_at"),
+                    }
             except Exception:
                 pass
-
-    lamp_rep = db.query(Report).filter(
-        Report.ward_id == ward_id,
-        Report.report_type == "lamp_installation",
-        Report.is_active == True
-    ).first()
-
-    pole_rep = db.query(Report).filter(
-        Report.ward_id == ward_id,
-        Report.report_type == "pole_report",
-        Report.is_active == True
-    ).first()
 
     lamp_file_path = safe_resolve_path(lamp_rep.storage_key) if lamp_rep else None
     pole_file_path = safe_resolve_path(pole_rep.storage_key) if pole_rep else None
 
-    # Handle wards with only surveyed poles (e.g. Bommanahalli)
-    poles_in_db = ward.poles if hasattr(ward, "poles") else []
-    if (not lamp_file_path or not lamp_rep) and (pole_rep or len(poles_in_db) > 0):
-        if len(poles_in_db) > 0:
-            return generate_pole_only_merged_report(
-                ward, poles_in_db, output_path, named_output_path, meta_path, named_meta_path, poles_cache_path
-            )
-
-    if not lamp_file_path or not pole_file_path:
+    if not lamp_file_path and not pole_file_path:
         return {
             "is_available": False,
             "ward_id": ward_id,
             "ward_number": ward.ward_number,
-            "reason": "Both Lamp Installation Report and Pole Survey Report must be uploaded to generate the Merged LED Report.",
-            "lamp_uploaded": lamp_file_path is not None,
-            "pole_uploaded": pole_file_path is not None,
+            "reason": "Uploaded report files could not be located on storage.",
+            "lamp_uploaded": lamp_rep is not None,
+            "pole_uploaded": pole_rep is not None,
             "lamp_rows_count": 0,
             "pole_led_rows_count": 0,
             "total_merged_count": 0,

@@ -68,6 +68,7 @@ def list_regions_with_wards(
 
         wards_out = []
         for w in reg.wards:
+            w_act = active_report_counts.get(w.id, 0)
             w_out = WardOut(
                 id=w.id,
                 region_id=w.region_id,
@@ -75,8 +76,8 @@ def list_regions_with_wards(
                 ward_name=w.ward_name,
                 ward_code=w.ward_code,
                 created_at=w.created_at,
-                active_reports_count=active_report_counts.get(w.id, 0),
-                total_poles_count=pole_counts.get(w.id, 0),
+                active_reports_count=w_act,
+                total_poles_count=pole_counts.get(w.id, 0) if w_act > 0 else 0,
                 zone_name=reg.region_name,
                 division=reg_division,
                 corporation=getattr(reg, "corporation", "Bangalore (BBMP)") or "Bangalore (BBMP)"
@@ -189,61 +190,63 @@ def get_hierarchy_summary(
 
         for w in reg.wards:
             grand_total_wards += 1
-            
-            # Lookup candidate metadata files (strictly using ward_number or verified legacy map)
-            cand_paths = [
-                merged_dir / f"ward_{w.ward_number}_master_merged_led.json",
-            ]
-            if w.ward_number in LEGACY_WARD_MAP:
-                cand_paths.append(merged_dir / f"ward_{LEGACY_WARD_MAP[w.ward_number]}_master_merged_led.json")
+            active_reps = active_report_counts.get(w.id, 0)
 
             w_lamp = 0
             w_survey = 0
             w_tot = 0
             is_merged_avail = False
 
-            for cp in cand_paths:
-                if cp.exists():
+            # Strictly require active reports uploaded for this ward
+            if active_reps > 0:
+                # Lookup candidate metadata files (strictly using ward_number or verified legacy map)
+                cand_paths = [
+                    merged_dir / f"ward_{w.ward_number}_master_merged_led.json",
+                ]
+                if w.ward_number in LEGACY_WARD_MAP:
+                    cand_paths.append(merged_dir / f"ward_{LEGACY_WARD_MAP[w.ward_number]}_master_merged_led.json")
+
+                for cp in cand_paths:
+                    if cp.exists():
+                        try:
+                            with open(cp, "r", encoding="utf-8") as f:
+                                meta = json.load(f)
+                            w_lamp = meta.get("lamp_rows_count", 0)
+                            w_survey = meta.get("pole_led_rows_count", 0)
+                            w_tot = meta.get("total_merged_count", w_lamp + w_survey)
+                            is_merged_avail = True
+                            break
+                        except Exception:
+                            pass
+                
+                # If no cached merged report gave lamp rows, check if an active lamp installation report was uploaded
+                if w_lamp == 0 and w.id in active_lamp_reports:
                     try:
-                        with open(cp, "r", encoding="utf-8") as f:
-                            meta = json.load(f)
-                        w_lamp = meta.get("lamp_rows_count", 0)
-                        w_survey = meta.get("pole_led_rows_count", 0)
-                        w_tot = meta.get("total_merged_count", w_lamp + w_survey)
-                        is_merged_avail = True
-                        break
+                        from ..services.pole_service import extract_lamp_report_count_from_file
+                        from ..services.storage_service import safe_resolve_path
+                        l_phys = safe_resolve_path(active_lamp_reports[w.id])
+                        if l_phys and l_phys.exists():
+                            extracted = extract_lamp_report_count_from_file(l_phys)
+                            if extracted > 0:
+                                w_lamp = extracted
+                                is_merged_avail = True
                     except Exception:
                         pass
-            
-            # If no cached merged report gave lamp rows, check if an active lamp installation report was uploaded
-            if w_lamp == 0 and w.id in active_lamp_reports:
-                try:
-                    from ..services.pole_service import extract_lamp_report_count_from_file
-                    from ..services.storage_service import safe_resolve_path
-                    l_phys = safe_resolve_path(active_lamp_reports[w.id])
-                    if l_phys and l_phys.exists():
-                        extracted = extract_lamp_report_count_from_file(l_phys)
-                        if extracted > 0:
-                            w_lamp = extracted
-                            is_merged_avail = True
-                except Exception:
-                    pass
 
-            # Fallback to DB poles count if survey poles exist without a 2-way merged report
-            p_cnt = pole_counts.get(w.id, len(w.poles))
-            if not is_merged_avail or (w_tot == 0 and w_survey == 0 and p_cnt > 0):
-                if p_cnt > 0:
-                    w_survey = p_cnt
+                # If survey poles exist in DB for this ward and active reports are present
+                p_cnt = pole_counts.get(w.id, 0)
+                if not is_merged_avail or (w_tot == 0 and w_survey == 0 and p_cnt > 0):
+                    if p_cnt > 0:
+                        w_survey = p_cnt
+                        w_tot = w_lamp + w_survey
+                        is_merged_avail = True
+                elif w_tot == 0 and (w_lamp > 0 or w_survey > 0):
                     w_tot = w_lamp + w_survey
-                    is_merged_avail = True
-            elif w_tot == 0 and (w_lamp > 0 or w_survey > 0):
-                w_tot = w_lamp + w_survey
 
             c_installed += w_lamp
             c_surveyed += w_survey
             c_total_poles += w_tot
 
-            active_reps = active_report_counts.get(w.id, len([r for r in w.reports if r.is_active]))
             wards_summary.append({
                 "id": w.id,
                 "ward_number": w.ward_number,

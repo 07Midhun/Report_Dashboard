@@ -169,6 +169,24 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
         Report.is_active == True
     ).all()
     available_reports = [r.report_type for r in reports]
+
+    # If NO reports have been uploaded for this ward, return 0 across all metrics
+    if not reports:
+        return PoleSummaryOut(
+            ward_id=ward_id,
+            total_poles=0,
+            installed_lamp_count=0,
+            extracted_survey_count=0,
+            connected_poles=0,
+            disconnected_poles=0,
+            pending_poles=0,
+            unknown_poles=0,
+            has_valid_coordinates=False,
+            center_latitude=None,
+            center_longitude=None,
+            available_reports=[]
+        )
+
     if has_meta and "master_merged_led" not in available_reports:
         available_reports.append("master_merged_led")
 

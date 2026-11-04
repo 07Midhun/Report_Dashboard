@@ -80,6 +80,8 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
         if ward.ward_number in LEGACY_WARD_MAP:
             cand_metas.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.json")
             cand_poles.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_poles.json")
+    cand_metas.append(merged_dir / f"ward_{ward_id}_master_merged_led.json")
+    cand_poles.append(merged_dir / f"ward_{ward_id}_master_merged_poles.json")
 
     found_meta = None
     for cm in cand_metas:
@@ -170,8 +172,8 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
     ).all()
     available_reports = [r.report_type for r in reports]
 
-    # If NO reports have been uploaded for this ward, return 0 across all metrics
-    if not reports:
+    # If NO reports have been uploaded for this ward and no merged report exists, return 0 across all metrics
+    if not reports and not has_meta:
         return PoleSummaryOut(
             ward_id=ward_id,
             total_poles=0,
@@ -190,10 +192,15 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
     if has_meta and "master_merged_led" not in available_reports:
         available_reports.append("master_merged_led")
 
-    # Display counts
-    display_total = total_db_poles if total_db_poles > 0 else (merged_tot if merged_tot > 0 else 0)
-    display_lamp = lamp_cnt
-    display_survey = total_db_poles if total_db_poles > 0 else (survey_cnt if survey_cnt > 0 else display_total)
+    # Display counts strictly prioritizing Master Merged Report
+    if has_meta and merged_tot > 0:
+        display_lamp = lamp_cnt
+        display_survey = survey_cnt
+        display_total = merged_tot
+    else:
+        display_lamp = lamp_cnt
+        display_survey = survey_cnt if survey_cnt > 0 else (total_db_poles if not lamp_cnt else max(0, total_db_poles - lamp_cnt))
+        display_total = (display_lamp + display_survey) if (display_lamp + display_survey) > 0 else total_db_poles
 
     return PoleSummaryOut(
         ward_id=ward_id,

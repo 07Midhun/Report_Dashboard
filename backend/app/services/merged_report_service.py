@@ -190,18 +190,23 @@ def get_or_create_merged_led_report(
     meta_path = merged_dir / f"ward_{ward_id}_master_merged_led.json"
     poles_cache_path = merged_dir / f"ward_{ward_id}_master_merged_poles.json"
 
-    # Candidate paths for lookup (strictly using ward_number or verified legacy map)
+    # Candidate paths for lookup (strictly using ward_number, verified legacy map, or ward ID)
     cand_metas = [named_meta_path]
     if ward.ward_number in LEGACY_WARD_MAP:
         cand_metas.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.json")
+    cand_metas.append(meta_path)
 
     cand_outputs = [named_output_path]
     if ward.ward_number in LEGACY_WARD_MAP:
         cand_outputs.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.xlsx")
+    cand_outputs.append(output_path)
 
-    # Check active reports uploaded for this ward
+    # Check active reports uploaded for this ward (supporting both current ID and legacy ID)
+    rep_query = (Report.ward_id == ward_id)
+    if ward.ward_number in LEGACY_WARD_MAP:
+        rep_query = rep_query | (Report.ward_id == LEGACY_WARD_MAP[ward.ward_number])
     active_reports = db.query(Report).filter(
-        Report.ward_id == ward_id,
+        rep_query,
         Report.is_active == True
     ).all()
 
@@ -635,6 +640,10 @@ def get_or_create_merged_led_report(
     try:
         with open(poles_cache_path, "w", encoding="utf-8") as pf:
             json.dump(poles_cache, pf, indent=2)
+        named_poles_cache_path = merged_dir / f"ward_{ward.ward_number}_master_merged_poles.json"
+        if poles_cache_path != named_poles_cache_path:
+            with open(named_poles_cache_path, "w", encoding="utf-8") as pf:
+                json.dump(poles_cache, pf, indent=2)
     except Exception:
         pass
 

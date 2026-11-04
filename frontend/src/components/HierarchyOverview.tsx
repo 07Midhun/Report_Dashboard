@@ -307,7 +307,9 @@ export const HierarchyOverview: React.FC = () => {
 
     // Fallback from summaryData if regions has not loaded yet
     if (constituenciesInDiv.length === 0 && summaryData?.constituencies) {
-      constituenciesInDiv = Object.values(summaryData.constituencies)
+      const rawConsts = Object.values(summaryData.constituencies);
+      const uniqueConsts = Array.from(new Map(rawConsts.map((c) => [c.id, c])).values());
+      constituenciesInDiv = uniqueConsts
         .filter((c) => {
           const div = (c.division || "").trim().toLowerCase().replace(/\s+region$/, "");
           if (div === selDiv) return true;
@@ -509,7 +511,15 @@ export const HierarchyOverview: React.FC = () => {
 
           <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {constituenciesInDiv.map((c) => {
-              const cStats = summaryData?.constituencies ? (summaryData.constituencies[c.region_name] || summaryData.constituencies[c.region_code]) : null;
+              const cStats = summaryData?.constituencies ? (
+                summaryData.constituencies[c.region_name] ||
+                summaryData.constituencies[c.region_code] ||
+                Object.values(summaryData.constituencies).find(
+                  (sc) => sc.name.toLowerCase() === c.region_name.toLowerCase() ||
+                          sc.code.toLowerCase() === c.region_code.toLowerCase() ||
+                          (c.region_code === "BMH" && (sc.code === "BMH" || sc.code === "BOM-Z1" || sc.name.toLowerCase().includes("bommanahalli")))
+                )
+              ) : null;
               const lamps = cStats?.installed_lamps ?? 0;
               const survey = cStats?.surveyed_leds ?? 0;
               const total = cStats?.total_poles ?? (lamps + survey);

@@ -211,9 +211,14 @@ export const Sidebar: React.FC = () => {
   const knownDivisions = ["Bommanahalli", "East"];
 
   knownDivisions.forEach((divName) => {
-    const zonesInDiv = processedRegions.filter(
-      (r) => (r.division || "").toLowerCase() === divName.toLowerCase()
-    );
+    const targetDiv = divName.toLowerCase();
+    const zonesInDiv = processedRegions.filter((r) => {
+      const div = (r.division || "").trim().toLowerCase().replace(/\s+region$/, "");
+      if (div === targetDiv) return true;
+      if (targetDiv === "bommanahalli" && (r.region_code === "BMH" || r.region_code === "BOM-Z1" || r.region_name.toLowerCase().includes("bommanahalli"))) return true;
+      if (targetDiv === "east" && (r.region_code !== "BMH" && r.region_code !== "BOM-Z1" && !r.region_name.toLowerCase().includes("bommanahalli"))) return true;
+      return false;
+    });
     if (zonesInDiv.length > 0 || !searchTerm) {
       divisionGroups.push({ division: divName, zones: zonesInDiv });
     }

@@ -72,8 +72,6 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
         if ward.ward_number in LEGACY_WARD_MAP:
             cand_metas.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.json")
             cand_poles.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_poles.json")
-    cand_metas.append(merged_dir / f"ward_{ward_id}_master_merged_led.json")
-    cand_poles.append(merged_dir / f"ward_{ward_id}_master_merged_poles.json")
 
     found_meta = None
     for cm in cand_metas:

@@ -190,18 +190,12 @@ def get_or_create_merged_led_report(
     meta_path = merged_dir / f"ward_{ward_id}_master_merged_led.json"
     poles_cache_path = merged_dir / f"ward_{ward_id}_master_merged_poles.json"
 
-    # Candidate paths for lookup
-    cand_metas = [
-        named_meta_path,
-        meta_path
-    ]
+    # Candidate paths for lookup (strictly using ward_number or verified legacy map)
+    cand_metas = [named_meta_path]
     if ward.ward_number in LEGACY_WARD_MAP:
         cand_metas.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.json")
 
-    cand_outputs = [
-        named_output_path,
-        output_path
-    ]
+    cand_outputs = [named_output_path]
     if ward.ward_number in LEGACY_WARD_MAP:
         cand_outputs.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.xlsx")
 

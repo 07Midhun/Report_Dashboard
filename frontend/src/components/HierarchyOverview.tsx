@@ -295,10 +295,10 @@ export const HierarchyOverview: React.FC = () => {
   // VIEW 2: REGION / DIVISION VIEW (e.g. East or Bommanahalli)
   // =========================================================================
   if (selectedDivision) {
-    const selDiv = (selectedDivision || "").trim().toLowerCase();
+    const selDiv = (selectedDivision || "").trim().toLowerCase().replace(/\s+region$/, "");
 
     let constituenciesInDiv = regions.filter((r) => {
-      const div = (r.division || "").trim().toLowerCase();
+      const div = (r.division || "").trim().toLowerCase().replace(/\s+region$/, "");
       if (div === selDiv) return true;
       if (selDiv === "bommanahalli" && (r.region_code === "BMH" || r.region_code === "BOM-Z1" || r.region_name.toLowerCase().includes("bommanahalli"))) return true;
       if (selDiv === "east" && (r.region_code !== "BMH" && r.region_code !== "BOM-Z1" && !r.region_name.toLowerCase().includes("bommanahalli"))) return true;
@@ -309,7 +309,7 @@ export const HierarchyOverview: React.FC = () => {
     if (constituenciesInDiv.length === 0 && summaryData?.constituencies) {
       constituenciesInDiv = Object.values(summaryData.constituencies)
         .filter((c) => {
-          const div = (c.division || "").trim().toLowerCase();
+          const div = (c.division || "").trim().toLowerCase().replace(/\s+region$/, "");
           if (div === selDiv) return true;
           if (selDiv === "bommanahalli" && (c.code === "BMH" || c.code === "BOM-Z1" || c.name.toLowerCase().includes("bommanahalli"))) return true;
           if (selDiv === "east" && (c.code !== "BMH" && c.code !== "BOM-Z1" && !c.name.toLowerCase().includes("bommanahalli"))) return true;
@@ -356,8 +356,10 @@ export const HierarchyOverview: React.FC = () => {
     // Flatten all constituent wards with their specific telemetry
     const allWardsInDiv = constituenciesInDiv.flatMap((c) => 
       c.wards.map((w) => {
-        const cStats = summaryData?.constituencies ? summaryData.constituencies[c.region_name] : null;
-        const wStats = cStats?.wards.find((sw) => sw.ward_number === w.ward_number || sw.id === w.id);
+        const cStats = summaryData?.constituencies 
+          ? (summaryData.constituencies[c.region_name] || summaryData.constituencies[c.region_code] || Object.values(summaryData.constituencies).find(sc => sc.name.toLowerCase() === c.region_name.toLowerCase()))
+          : null;
+        const wStats = cStats?.wards.find((sw) => sw.ward_number === w.ward_number) || cStats?.wards.find((sw) => sw.id === w.id);
         return {
           ...w,
           constituencyName: c.region_name,

@@ -48,9 +48,24 @@ def list_regions_with_wards(
     except Exception:
         active_report_counts = {}
 
+    try:
+        active_lamp_reports = dict(
+            db.query(Report.ward_id, Report.storage_key)
+            .filter(Report.report_type == "lamp_installation", Report.is_active == True)
+            .all()
+        )
+    except Exception:
+        active_lamp_reports = {}
+
     regions = db.query(Region).order_by(Region.division, Region.region_name).all()
     results = []
     for reg in regions:
+        raw_div = getattr(reg, "division", "") or ""
+        if raw_div.strip().lower() == "bommanahalli" or reg.region_code in ("BMH", "BOM-Z1", "BOM") or "bommanahalli" in reg.region_name.lower():
+            reg_division = "Bommanahalli"
+        else:
+            reg_division = "East"
+
         wards_out = []
         for w in reg.wards:
             w_out = WardOut(
@@ -63,7 +78,7 @@ def list_regions_with_wards(
                 active_reports_count=active_report_counts.get(w.id, 0),
                 total_poles_count=pole_counts.get(w.id, 0),
                 zone_name=reg.region_name,
-                division=getattr(reg, "division", "East") or "East",
+                division=reg_division,
                 corporation=getattr(reg, "corporation", "Bangalore (BBMP)") or "Bangalore (BBMP)"
             )
             wards_out.append(w_out)
@@ -73,7 +88,7 @@ def list_regions_with_wards(
             region_code=reg.region_code,
             region_name=reg.region_name,
             corporation=getattr(reg, "corporation", "Bangalore (BBMP)") or "Bangalore (BBMP)",
-            division=getattr(reg, "division", "East") or "East",
+            division=reg_division,
             created_at=reg.created_at,
             wards=wards_out
         )
@@ -131,6 +146,15 @@ def get_hierarchy_summary(
     except Exception:
         active_report_counts = {}
 
+    try:
+        active_lamp_reports = dict(
+            db.query(Report.ward_id, Report.storage_key)
+            .filter(Report.report_type == "lamp_installation", Report.is_active == True)
+            .all()
+        )
+    except Exception:
+        active_lamp_reports = {}
+
     divisions_map = {}
     constituencies_map = {}
 
@@ -166,13 +190,12 @@ def get_hierarchy_summary(
         for w in reg.wards:
             grand_total_wards += 1
             
-            # Lookup candidate metadata files
+            # Lookup candidate metadata files (strictly using ward_number or verified legacy map)
             cand_paths = [
                 merged_dir / f"ward_{w.ward_number}_master_merged_led.json",
             ]
             if w.ward_number in LEGACY_WARD_MAP:
                 cand_paths.append(merged_dir / f"ward_{LEGACY_WARD_MAP[w.ward_number]}_master_merged_led.json")
-            cand_paths.append(merged_dir / f"ward_{w.id}_master_merged_led.json")
 
             w_lamp = 0
             w_survey = 0
@@ -192,13 +215,29 @@ def get_hierarchy_summary(
                     except Exception:
                         pass
             
+            # If no cached merged report gave lamp rows, check if an active lamp installation report was uploaded
+            if w_lamp == 0 and w.id in active_lamp_reports:
+                try:
+                    from ..services.pole_service import extract_lamp_report_count_from_file
+                    from ..services.storage_service import resolve_physical_file
+                    l_phys = resolve_physical_file(active_lamp_reports[w.id])
+                    if l_phys and l_phys.exists():
+                        extracted = extract_lamp_report_count_from_file(l_phys)
+                        if extracted > 0:
+                            w_lamp = extracted
+                            is_merged_avail = True
+                except Exception:
+                    pass
+
             # Fallback to DB poles count if survey poles exist without a 2-way merged report
             p_cnt = pole_counts.get(w.id, len(w.poles))
             if not is_merged_avail or (w_tot == 0 and w_survey == 0 and p_cnt > 0):
                 if p_cnt > 0:
                     w_survey = p_cnt
-                    w_tot = p_cnt
+                    w_tot = w_lamp + w_survey
                     is_merged_avail = True
+            elif w_tot == 0 and (w_lamp > 0 or w_survey > 0):
+                w_tot = w_lamp + w_survey
 
             c_installed += w_lamp
             c_surveyed += w_survey

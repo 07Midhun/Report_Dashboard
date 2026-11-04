@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, LargeBinary
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, deferred
 import enum
 from ..database import Base
 
@@ -20,7 +20,7 @@ class Report(Base):
     file_extension = Column(String(20), nullable=False)
     file_size = Column(Integer, nullable=False)
     mime_type = Column(String(100), default="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    file_data = Column(LargeBinary, nullable=True)  # Persistent binary data across ephemeral server restarts
+    file_data = deferred(Column(LargeBinary, nullable=True))  # Lazy-loaded binary data for cloud persistence
     uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -39,7 +39,7 @@ class ReportVersion(Base):
     original_filename = Column(String(255), nullable=False)
     storage_key = Column(String(500), nullable=False)
     file_size = Column(Integer, nullable=False)
-    file_data = Column(LargeBinary, nullable=True)
+    file_data = deferred(Column(LargeBinary, nullable=True))
     uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     version_number = Column(Integer, nullable=False)

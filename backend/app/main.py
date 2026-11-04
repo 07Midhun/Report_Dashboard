@@ -18,6 +18,26 @@ def on_startup():
         Base.metadata.create_all(bind=engine)
         print("Database tables initialized successfully.", flush=True)
 
+        # Auto-migrate existing PostgreSQL / SQLite tables to include new columns
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                if engine.dialect.name == "postgresql":
+                    conn.execute(text("ALTER TABLE reports ADD COLUMN IF NOT EXISTS file_data BYTEA;"))
+                    conn.execute(text("ALTER TABLE report_versions ADD COLUMN IF NOT EXISTS file_data BYTEA;"))
+                    conn.commit()
+                elif engine.dialect.name == "sqlite":
+                    r_cols = [c[1] for c in conn.execute(text("PRAGMA table_info(reports);")).fetchall()]
+                    if r_cols and "file_data" not in r_cols:
+                        conn.execute(text("ALTER TABLE reports ADD COLUMN file_data BLOB;"))
+                    rv_cols = [c[1] for c in conn.execute(text("PRAGMA table_info(report_versions);")).fetchall()]
+                    if rv_cols and "file_data" not in rv_cols:
+                        conn.execute(text("ALTER TABLE report_versions ADD COLUMN file_data BLOB;"))
+                    conn.commit()
+                print("Database schema migration verified (reports.file_data).", flush=True)
+        except Exception as mig_err:
+            print(f"Notice on schema migration: {mig_err}", flush=True)
+
         from .database import SessionLocal
         from .models.user import User
         from .services.auth_service import get_password_hash

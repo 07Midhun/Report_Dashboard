@@ -219,8 +219,8 @@ def get_hierarchy_summary(
             if w_lamp == 0 and w.id in active_lamp_reports:
                 try:
                     from ..services.pole_service import extract_lamp_report_count_from_file
-                    from ..services.storage_service import resolve_physical_file
-                    l_phys = resolve_physical_file(active_lamp_reports[w.id])
+                    from ..services.storage_service import safe_resolve_path
+                    l_phys = safe_resolve_path(active_lamp_reports[w.id])
                     if l_phys and l_phys.exists():
                         extracted = extract_lamp_report_count_from_file(l_phys)
                         if extracted > 0:

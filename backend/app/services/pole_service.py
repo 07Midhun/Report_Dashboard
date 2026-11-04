@@ -110,7 +110,8 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
     ).first()
     if lamp_rep:
         try:
-            lamp_phys = resolve_physical_file(lamp_rep.storage_key)
+            from .storage_service import safe_resolve_path
+            lamp_phys = safe_resolve_path(lamp_rep.storage_key)
             if lamp_phys and lamp_phys.exists():
                 direct_cnt = extract_lamp_report_count_from_file(lamp_phys)
                 if direct_cnt > 0:

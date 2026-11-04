@@ -182,6 +182,33 @@ def upload_report(
         except Exception:
             pass  # Do not block upload if parsing fails; user can manually trigger or configure mappings
 
+        # Immediately cache extracted lamp count upon upload so dashboard is instant
+        if report_type == "lamp_installation":
+            try:
+                from ..services.pole_service import extract_lamp_report_count_from_file
+                from ..services.storage_service import safe_resolve_path
+                phys = safe_resolve_path(storage_key)
+                if phys and phys.exists():
+                    l_count = extract_lamp_report_count_from_file(phys)
+                    if l_count > 0:
+                        merged_dir = Path(settings.STORAGE_ROOT) / "merged"
+                        merged_dir.mkdir(parents=True, exist_ok=True)
+                        meta_file = merged_dir / f"ward_{ward.ward_number}_master_merged_led.json"
+                        meta_data = {}
+                        if meta_file.exists():
+                            try:
+                                with open(meta_file, "r", encoding="utf-8") as mf:
+                                    meta_data = json.load(mf)
+                            except Exception:
+                                pass
+                        meta_data["lamp_rows_count"] = l_count
+                        s_count = meta_data.get("pole_led_rows_count", 0)
+                        meta_data["total_merged_count"] = l_count + s_count
+                        with open(meta_file, "w", encoding="utf-8") as mf:
+                            json.dump(meta_data, mf, indent=2)
+            except Exception:
+                pass
+
         # Automatically re-extract counts and regenerate merged report when a lamp or pole report is uploaded
         if report_type in ("lamp_installation", "pole_report"):
             try:
@@ -293,6 +320,33 @@ def replace_report(
             import_poles_for_ward(db, ward.id, admin.id, preferred_report_type=report_type)
         except Exception:
             pass
+
+        # Immediately cache extracted lamp count upon replacement so dashboard is instant
+        if report_type == "lamp_installation":
+            try:
+                from ..services.pole_service import extract_lamp_report_count_from_file
+                from ..services.storage_service import safe_resolve_path
+                phys = safe_resolve_path(storage_key)
+                if phys and phys.exists():
+                    l_count = extract_lamp_report_count_from_file(phys)
+                    if l_count > 0:
+                        merged_dir = Path(settings.STORAGE_ROOT) / "merged"
+                        merged_dir.mkdir(parents=True, exist_ok=True)
+                        meta_file = merged_dir / f"ward_{ward.ward_number}_master_merged_led.json"
+                        meta_data = {}
+                        if meta_file.exists():
+                            try:
+                                with open(meta_file, "r", encoding="utf-8") as mf:
+                                    meta_data = json.load(mf)
+                            except Exception:
+                                pass
+                        meta_data["lamp_rows_count"] = l_count
+                        s_count = meta_data.get("pole_led_rows_count", 0)
+                        meta_data["total_merged_count"] = l_count + s_count
+                        with open(meta_file, "w", encoding="utf-8") as mf:
+                            json.dump(meta_data, mf, indent=2)
+            except Exception:
+                pass
 
         # Automatically re-extract counts and regenerate merged report when a lamp or pole report is replaced
         if report_type in ("lamp_installation", "pole_report"):

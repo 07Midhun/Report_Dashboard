@@ -18,6 +18,41 @@ LEGACY_WARD_MAP = {
     "W84": 51, "W85": 52
 }
 
+def extract_lamp_report_count_from_file(file_path: Path) -> int:
+    """Extracts total valid installed lamp rows from an uploaded Lamp Installation Report."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        sheet = wb.active
+        rows_iter = sheet.iter_rows(values_only=True)
+        row_1 = next(rows_iter, None)
+        row_2 = next(rows_iter, None)
+        
+        headers = list(row_2) if row_2 else (list(row_1) if row_1 else [])
+        p_col = -1
+        for idx, h in enumerate(headers):
+            if h and any(k in str(h).strip().lower() for k in ["pole number", "pole id", "poleid", "pole_number", "pole no", "lamp id"]):
+                p_col = idx
+                break
+        if p_col < 0:
+            p_col = 5 if len(headers) > 5 else 0
+
+        cnt = 0
+        for row in rows_iter:
+            if not row:
+                continue
+            val = row[p_col] if len(row) > p_col and row[p_col] is not None else None
+            val_str = str(val).strip() if val is not None else ""
+            if not val_str or val_str.lower() in ("none", "-", "nan"):
+                if any(c is not None and str(c).strip() not in ("", "none", "-", "nan") for c in row):
+                    cnt += 1
+                continue
+            cnt += 1
+        wb.close()
+        return cnt
+    except Exception:
+        return 0
+
 def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
     """Computes connectivity and coordinate summary for the selected ward, prioritizing merged data."""
     from pathlib import Path
@@ -68,26 +103,26 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
         except Exception:
             pass
 
-    # Fallback to active lamp report in DB if lamp_cnt is still 0
+    # Check active lamp report in DB - extract total count directly from uploaded lamp installation report
     lamp_rep = db.query(Report).filter(
         Report.ward_id == ward_id,
         Report.report_type == "lamp_installation",
         Report.is_active == True
     ).first()
-    if lamp_rep and lamp_cnt == 0:
-        db_lamp_poles = db.query(Pole).filter(Pole.ward_id == ward_id, Pole.source_report_id == lamp_rep.id).count()
-        if db_lamp_poles > 0:
-            lamp_cnt = db_lamp_poles
-        else:
-            try:
-                lamp_phys = resolve_physical_file(lamp_rep.storage_key)
-                if lamp_phys and lamp_phys.exists():
-                    wb = openpyxl.load_workbook(lamp_phys, read_only=True, data_only=True)
-                    sheet = wb.active
-                    lamp_cnt = max(0, sheet.max_row - 2)
-                    wb.close()
-            except Exception:
-                pass
+    if lamp_rep:
+        try:
+            lamp_phys = resolve_physical_file(lamp_rep.storage_key)
+            if lamp_phys and lamp_phys.exists():
+                direct_cnt = extract_lamp_report_count_from_file(lamp_phys)
+                if direct_cnt > 0:
+                    lamp_cnt = direct_cnt
+        except Exception:
+            pass
+
+        if lamp_cnt == 0:
+            db_lamp_poles = db.query(Pole).filter(Pole.ward_id == ward_id, Pole.source_report_id == lamp_rep.id).count()
+            if db_lamp_poles > 0:
+                lamp_cnt = db_lamp_poles
 
     poles = db.query(Pole).filter(Pole.ward_id == ward_id).all()
     total_db_poles = len(poles)

@@ -182,6 +182,14 @@ def upload_report(
         except Exception:
             pass  # Do not block upload if parsing fails; user can manually trigger or configure mappings
 
+        # Automatically re-extract counts and regenerate merged report when a lamp or pole report is uploaded
+        if report_type in ("lamp_installation", "pole_report"):
+            try:
+                from ..services.merged_report_service import get_or_create_merged_led_report
+                get_or_create_merged_led_report(db, ward.id, force_regenerate=True)
+            except Exception:
+                pass
+
         rep_out = ReportOut(
             id=new_report.id,
             ward_id=new_report.ward_id,
@@ -285,6 +293,14 @@ def replace_report(
             import_poles_for_ward(db, ward.id, admin.id, preferred_report_type=report_type)
         except Exception:
             pass
+
+        # Automatically re-extract counts and regenerate merged report when a lamp or pole report is replaced
+        if report_type in ("lamp_installation", "pole_report"):
+            try:
+                from ..services.merged_report_service import get_or_create_merged_led_report
+                get_or_create_merged_led_report(db, ward.id, force_regenerate=True)
+            except Exception:
+                pass
 
         rep_out = ReportOut(
             id=existing.id,

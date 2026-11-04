@@ -141,7 +141,7 @@ def get_hierarchy_summary(
 
     for reg in regions:
         raw_div = getattr(reg, "division", "") or ""
-        if raw_div.strip().lower() == "bommanahalli" or reg.region_code == "BOM-Z1" or "bommanahalli" in reg.region_name.lower():
+        if raw_div.strip().lower() == "bommanahalli" or reg.region_code in ("BMH", "BOM-Z1", "BOM") or "bommanahalli" in reg.region_name.lower():
             division_name = "Bommanahalli"
         else:
             division_name = "East"
@@ -217,7 +217,7 @@ def get_hierarchy_summary(
                 "is_merged_available": is_merged_avail
             })
 
-        constituencies_map[reg.region_name] = {
+        const_entry = {
             "id": reg.id,
             "name": reg.region_name,
             "code": reg.region_code,
@@ -228,6 +228,9 @@ def get_hierarchy_summary(
             "total_poles": c_total_poles,
             "wards": wards_summary
         }
+        constituencies_map[reg.region_name] = const_entry
+        if reg.region_code:
+            constituencies_map[reg.region_code] = const_entry
 
         # Accumulate in division
         div = divisions_map[division_name]

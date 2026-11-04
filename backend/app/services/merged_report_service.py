@@ -82,7 +82,7 @@ def generate_pole_only_merged_report(
         row = [
             sr_no,
             "Bangalore (BBMP)",
-            getattr(ward, "zone_name", "Bommanahalli-Z1"),
+            getattr(ward, "zone_name", "Bommanahalli"),
             f"Ward {ward.ward_number}",
             sp,
             pole_display,
@@ -520,7 +520,7 @@ def get_or_create_merged_led_report(
 
         set_cell(out_sr_c if out_sr_c >= 0 else 0, sr_no)
         set_cell(out_corp_c if out_corp_c >= 0 else 1, getattr(region, "division", "EAST") or "EAST")
-        set_cell(out_const_c if out_const_c >= 0 else 2, region.region_name if region and region.region_name else "PulakeshiNagar")
+        set_cell(out_const_c if out_const_c >= 0 else 2, region.region_name if region and region.region_name else "Pulakeshi Nagar")
         set_cell(out_ward_c if out_ward_c >= 0 else 3, ward.ward_code or ward.ward_number)
         set_cell(out_sp_c if out_sp_c >= 0 else 4, row[p_sp_c] if p_sp_c >= 0 else None)
         set_cell(out_pole_c if out_pole_c >= 0 else 5, formatted_pid)

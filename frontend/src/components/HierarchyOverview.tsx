@@ -300,8 +300,8 @@ export const HierarchyOverview: React.FC = () => {
     let constituenciesInDiv = regions.filter((r) => {
       const div = (r.division || "").trim().toLowerCase();
       if (div === selDiv) return true;
-      if (selDiv === "bommanahalli" && (r.region_code === "BOM-Z1" || r.region_name.toLowerCase().includes("bommanahalli"))) return true;
-      if (selDiv === "east" && (r.region_code !== "BOM-Z1" && !r.region_name.toLowerCase().includes("bommanahalli"))) return true;
+      if (selDiv === "bommanahalli" && (r.region_code === "BMH" || r.region_code === "BOM-Z1" || r.region_name.toLowerCase().includes("bommanahalli"))) return true;
+      if (selDiv === "east" && (r.region_code !== "BMH" && r.region_code !== "BOM-Z1" && !r.region_name.toLowerCase().includes("bommanahalli"))) return true;
       return false;
     });
 
@@ -311,8 +311,8 @@ export const HierarchyOverview: React.FC = () => {
         .filter((c) => {
           const div = (c.division || "").trim().toLowerCase();
           if (div === selDiv) return true;
-          if (selDiv === "bommanahalli" && (c.code === "BOM-Z1" || c.name.toLowerCase().includes("bommanahalli"))) return true;
-          if (selDiv === "east" && (c.code !== "BOM-Z1" && !c.name.toLowerCase().includes("bommanahalli"))) return true;
+          if (selDiv === "bommanahalli" && (c.code === "BMH" || c.code === "BOM-Z1" || c.name.toLowerCase().includes("bommanahalli"))) return true;
+          if (selDiv === "east" && (c.code !== "BMH" && c.code !== "BOM-Z1" && !c.name.toLowerCase().includes("bommanahalli"))) return true;
           return false;
         })
         .map((c) => ({
@@ -507,7 +507,7 @@ export const HierarchyOverview: React.FC = () => {
 
           <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {constituenciesInDiv.map((c) => {
-              const cStats = summaryData?.constituencies ? summaryData.constituencies[c.region_name] : null;
+              const cStats = summaryData?.constituencies ? (summaryData.constituencies[c.region_name] || summaryData.constituencies[c.region_code]) : null;
               const lamps = cStats?.installed_lamps ?? 0;
               const survey = cStats?.surveyed_leds ?? 0;
               const total = cStats?.total_poles ?? (lamps + survey);
@@ -826,7 +826,7 @@ export const HierarchyOverview: React.FC = () => {
                   East Zone
                 </h3>
                 <span className="text-xs text-slate-500">
-                  6 Constituencies &bull; 46 Wards (CVRN, HEB, PKN, SVN, STN, SJN)
+                  6 Constituencies &bull; 46 Wards (CVRN, HEB, PN, SN, SNTR, SVJR)
                 </span>
               </div>
             </div>
@@ -870,7 +870,7 @@ export const HierarchyOverview: React.FC = () => {
                   Bommanahalli Zone
                 </h3>
                 <span className="text-xs text-slate-500">
-                  1 Constituency &bull; 11 Wards (Bommanahalli-Z1)
+                  1 Constituency &bull; 11 Wards (BMH)
                 </span>
               </div>
             </div>
@@ -913,7 +913,7 @@ export const HierarchyOverview: React.FC = () => {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
           {regions.map((reg) => {
-            const cStats = summaryData?.constituencies ? summaryData.constituencies[reg.region_name] : null;
+            const cStats = summaryData?.constituencies ? (summaryData.constituencies[reg.region_name] || summaryData.constituencies[reg.region_code]) : null;
             const lamps = cStats?.installed_lamps ?? 0;
             const survey = cStats?.surveyed_leds ?? 0;
             const total = cStats?.total_poles ?? (lamps + survey);

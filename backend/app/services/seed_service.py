@@ -19,8 +19,8 @@ BBMP_HIERARCHY = [
         "division": "Bommanahalli",
         "zones": [
             {
-                "code": "BOM-Z1",
-                "name": "Bommanahalli-Z1",
+                "code": "BMH",
+                "name": "Bommanahalli",
                 "start_ward": 202,
                 "end_ward": 212  # 11 wards (W202 - W212)
             }
@@ -42,26 +42,26 @@ BBMP_HIERARCHY = [
                 "end_ward": 68   # 8 wards (W61 - W68)
             },
             {
-                "code": "PKN",
-                "name": "PulakeshiNagar",
+                "code": "PN",
+                "name": "Pulakeshi Nagar",
                 "start_ward": 69,
                 "end_ward": 75   # 7 wards (W69 - W75, including newly added W75)
             },
             {
-                "code": "SVN",
-                "name": "SarvagnaNagar",
+                "code": "SN",
+                "name": "Sarvagna Nagar",
                 "start_ward": 76,
                 "end_ward": 85   # 10 wards (W76 - W85)
             },
             {
-                "code": "STN",
+                "code": "SNTR",
                 "name": "ShanthiNagar",
                 "start_ward": 166,
                 "end_ward": 172  # 7 wards (W166 - W172)
             },
             {
-                "code": "SJN",
-                "name": "SivajiNagar",
+                "code": "SVJR",
+                "name": "Sivaji Nagar",
                 "start_ward": 116,
                 "end_ward": 121  # 6 wards (W116 - W121)
             }
@@ -170,6 +170,28 @@ def seed_bbmp_hierarchy(db: Session):
         # First, attempt to restore backup if DB is completely clean
         restore_database_backup_if_empty(db)
 
+        # Migrate old constituency codes to the new short forms
+        old_to_new_codes = {
+            "BOM-Z1": "BMH",
+            "BOM": "BMH",
+            "PKN": "PN",
+            "SVN": "SN",
+            "STN": "SNTR",
+            "SJN": "SVJR"
+        }
+        for old_c, new_c in old_to_new_codes.items():
+            old_r = db.query(Region).filter(Region.region_code == old_c).first()
+            if old_r:
+                existing_new = db.query(Region).filter(Region.region_code == new_c).first()
+                if not existing_new:
+                    old_r.region_code = new_c
+                    db.flush()
+                else:
+                    for w in old_r.wards:
+                        w.region_id = existing_new.id
+                    db.delete(old_r)
+                    db.flush()
+
         valid_region_codes = []
         for div in BBMP_HIERARCHY:
             for z in div["zones"]:
@@ -184,6 +206,12 @@ def seed_bbmp_hierarchy(db: Session):
 
                 region = db.query(Region).filter(Region.region_code == code).first()
                 if not region:
+                    # Also try matching by name
+                    region = db.query(Region).filter(Region.region_name.ilike(name.replace(" ", ""))).first()
+                if not region:
+                    region = db.query(Region).filter(Region.region_name.ilike(f"%{name}%")).first()
+
+                if not region:
                     region = Region(
                         region_code=code,
                         region_name=name,
@@ -193,6 +221,7 @@ def seed_bbmp_hierarchy(db: Session):
                     db.add(region)
                     db.flush()
                 else:
+                    region.region_code = code
                     region.region_name = name
                     region.division = division_name
                     region.corporation = "Bangalore (BBMP)"

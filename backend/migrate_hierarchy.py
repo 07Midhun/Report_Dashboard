@@ -21,17 +21,17 @@ def migrate():
         {
             "corporation": "Bangalore (BBMP)",
             "division": "Bommanahalli",
-            "region_code": "BOM-Z1",
-            "region_name": "Bommanahalli - Z1",
+            "region_code": "BMH",
+            "region_name": "Bommanahalli",
             "ward_start": 202,
             "ward_end": 212,
-            "prefix": "BOM"
+            "prefix": "BMH"
         },
         {
             "corporation": "Bangalore (BBMP)",
             "division": "East",
             "region_code": "CVRN",
-            "region_name": "CVRaman Nagar",
+            "region_name": "CVRamanNagar",
             "ward_start": 108,
             "ward_end": 115,
             "prefix": "CVRN"
@@ -48,38 +48,38 @@ def migrate():
         {
             "corporation": "Bangalore (BBMP)",
             "division": "East",
-            "region_code": "PKN",
-            "region_name": "PulakeshiNagar",
+            "region_code": "PN",
+            "region_name": "Pulakeshi Nagar",
             "ward_start": 69,
             "ward_end": 75,
-            "prefix": "PKN"
+            "prefix": "PN"
         },
         {
             "corporation": "Bangalore (BBMP)",
             "division": "East",
-            "region_code": "SVN",
-            "region_name": "SarvagnaNagar",
+            "region_code": "SN",
+            "region_name": "Sarvagna Nagar",
             "ward_start": 76,
             "ward_end": 85,
-            "prefix": "SVN"
+            "prefix": "SN"
         },
         {
             "corporation": "Bangalore (BBMP)",
             "division": "East",
-            "region_code": "STN",
+            "region_code": "SNTR",
             "region_name": "ShanthiNagar",
             "ward_start": 166,
             "ward_end": 172,
-            "prefix": "STN"
+            "prefix": "SNTR"
         },
         {
             "corporation": "Bangalore (BBMP)",
             "division": "East",
-            "region_code": "SJN",
+            "region_code": "SVJR",
             "region_name": "Sivaji Nagar",
             "ward_start": 116,
             "ward_end": 121,
-            "prefix": "SJN"
+            "prefix": "SVJR"
         }
     ]
 

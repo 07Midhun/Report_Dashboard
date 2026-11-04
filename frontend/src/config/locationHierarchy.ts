@@ -2,7 +2,7 @@
 // Required structure:
 // Level 1: Main Location -> Bangalore (BBMP)
 // Level 2: Region -> Bommanahalli | East
-// Level 3: Zone -> Bommanahalli-Z1 | CVRamanNagar, Hebbal, PulakeshiNagar, SarvagnaNagar, ShanthiNagar, SivajiNagar
+// Level 3: Zone / Constituency -> Bommanahalli (BMH) | CVRamanNagar (CVRN), Hebbal (HEB), Pulakeshi Nagar (PN), Sarvagna Nagar (SN), ShanthiNagar (SNTR), Sivaji Nagar (SVJR)
 // Level 4: Wards -> strictly assigned ranges
 
 export interface ZoneConfig {
@@ -29,8 +29,8 @@ export const BANGALORE_BBMP_HIERARCHY: LocationConfig = {
       name: "Bommanahalli",
       zones: [
         {
-          name: "Bommanahalli-Z1",
-          code: "BOM-Z1",
+          name: "Bommanahalli",
+          code: "BMH",
           startWard: 202,
           endWard: 212,
         },
@@ -52,26 +52,26 @@ export const BANGALORE_BBMP_HIERARCHY: LocationConfig = {
           endWard: 68,
         },
         {
-          name: "PulakeshiNagar",
-          code: "PKN",
+          name: "Pulakeshi Nagar",
+          code: "PN",
           startWard: 69,
           endWard: 75,
         },
         {
-          name: "SarvagnaNagar",
-          code: "SVN",
+          name: "Sarvagna Nagar",
+          code: "SN",
           startWard: 76,
           endWard: 85,
         },
         {
           name: "ShanthiNagar",
-          code: "STN",
+          code: "SNTR",
           startWard: 166,
           endWard: 172,
         },
         {
-          name: "SivajiNagar",
-          code: "SJN",
+          name: "Sivaji Nagar",
+          code: "SVJR",
           startWard: 116,
           endWard: 121,
         },

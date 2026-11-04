@@ -8,87 +8,118 @@ from ..models.audit_log import AuditLog
 from ..schemas.pole import PoleSummaryOut, ColumnMappingConfig
 from .excel_parser import extract_poles_from_excel, is_valid_lat_long
 
+LEGACY_WARD_MAP = {
+    "W61": 1, "W62": 2, "W63": 3, "W64": 4,
+    "W65": 32, "W66": 33, "W67": 34, "W68": 35,
+    "W69": 36, "W70": 37, "W71": 38, "W72": 39,
+    "W73": 40, "W74": 41, "W75": 42,
+    "W76": 43, "W77": 44, "W78": 45, "W79": 46,
+    "W80": 47, "W81": 48, "W82": 49, "W83": 50,
+    "W84": 51, "W85": 52
+}
+
 def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
     """Computes connectivity and coordinate summary for the selected ward, prioritizing merged data."""
     from pathlib import Path
     import json
+    import openpyxl
     from ..config import settings
+    from .storage_service import resolve_physical_file
 
+    ward = db.query(Ward).filter(Ward.id == ward_id).first()
     merged_dir = Path(settings.STORAGE_ROOT) / "merged"
-    meta_path = merged_dir / f"ward_{ward_id}_master_merged_led.json"
-    poles_cache_path = merged_dir / f"ward_{ward_id}_master_merged_poles.json"
 
-    # Ensure merged report and poles cache are up-to-date with comparison algorithm (version 2)
-    need_generation = not (meta_path.exists() and poles_cache_path.exists())
-    if not need_generation:
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                chk_meta = json.load(f)
-            if chk_meta.get("algorithm_version") != 2:
-                need_generation = True
-        except Exception:
-            need_generation = True
+    cand_metas = []
+    cand_poles = []
+    if ward:
+        cand_metas.append(merged_dir / f"ward_{ward.ward_number}_master_merged_led.json")
+        cand_poles.append(merged_dir / f"ward_{ward.ward_number}_master_merged_poles.json")
+        if ward.ward_number in LEGACY_WARD_MAP:
+            cand_metas.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.json")
+            cand_poles.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_poles.json")
+    cand_metas.append(merged_dir / f"ward_{ward_id}_master_merged_led.json")
+    cand_poles.append(merged_dir / f"ward_{ward_id}_master_merged_poles.json")
 
-    if need_generation:
-        try:
-            from .merged_report_service import get_or_create_merged_led_report
-            get_or_create_merged_led_report(db, ward_id, force_regenerate=need_generation)
-        except Exception:
-            pass
+    found_meta = None
+    for cm in cand_metas:
+        if cm.exists():
+            found_meta = cm
+            break
 
-    if meta_path.exists() and poles_cache_path.exists():
+    found_poles_cache = None
+    for cp in cand_poles:
+        if cp.exists():
+            found_poles_cache = cp
+            break
+
+    lamp_cnt = 0
+    survey_cnt = 0
+    merged_tot = 0
+    has_meta = False
+
+    if found_meta:
         try:
-            with open(meta_path, "r", encoding="utf-8") as f:
+            with open(found_meta, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-            with open(poles_cache_path, "r", encoding="utf-8") as pf:
-                poles_data = json.load(pf)
-
-            valid_coords = [
-                p for p in poles_data 
-                if p.get("latitude") and p.get("longitude") 
-                and is_valid_lat_long(float(p["latitude"]), float(p["longitude"]))
-            ]
-            has_valid = len(valid_coords) > 0
-            center_lat = sum(float(p["latitude"]) for p in valid_coords) / len(valid_coords) if has_valid else None
-            center_lon = sum(float(p["longitude"]) for p in valid_coords) / len(valid_coords) if has_valid else None
-
-            tot = meta.get("total_merged_count", len(poles_data))
             lamp_cnt = meta.get("lamp_rows_count", 0)
             survey_cnt = meta.get("pole_led_rows_count", 0)
-
-            return PoleSummaryOut(
-                ward_id=ward_id,
-                total_poles=tot,
-                installed_lamp_count=lamp_cnt,
-                extracted_survey_count=survey_cnt,
-                connected_poles=tot,
-                disconnected_poles=0,
-                pending_poles=0,
-                unknown_poles=0,
-                has_valid_coordinates=has_valid,
-                center_latitude=center_lat,
-                center_longitude=center_lon,
-                available_reports=["master_merged_led"]
-            )
+            merged_tot = meta.get("total_merged_count", lamp_cnt + survey_cnt)
+            has_meta = True
         except Exception:
             pass
 
+    # Fallback to active lamp report in DB if lamp_cnt is still 0
+    lamp_rep = db.query(Report).filter(
+        Report.ward_id == ward_id,
+        Report.report_type == "lamp_installation",
+        Report.is_active == True
+    ).first()
+    if lamp_rep and lamp_cnt == 0:
+        db_lamp_poles = db.query(Pole).filter(Pole.ward_id == ward_id, Pole.source_report_id == lamp_rep.id).count()
+        if db_lamp_poles > 0:
+            lamp_cnt = db_lamp_poles
+        else:
+            try:
+                lamp_phys = resolve_physical_file(lamp_rep.storage_key)
+                if lamp_phys and lamp_phys.exists():
+                    wb = openpyxl.load_workbook(lamp_phys, read_only=True, data_only=True)
+                    sheet = wb.active
+                    lamp_cnt = max(0, sheet.max_row - 2)
+                    wb.close()
+            except Exception:
+                pass
+
     poles = db.query(Pole).filter(Pole.ward_id == ward_id).all()
-    
-    total = len(poles)
+    total_db_poles = len(poles)
+
     connected = sum(1 for p in poles if p.connectivity_status == "connected")
     disconnected = sum(1 for p in poles if p.connectivity_status == "disconnected")
     pending = sum(1 for p in poles if p.connectivity_status == "pending")
     unknown = sum(1 for p in poles if p.connectivity_status == "unknown")
 
-    valid_coords = [p for p in poles if is_valid_lat_long(p.latitude, p.longitude)]
-    has_valid = len(valid_coords) > 0
+    # Extract coordinates from poles cache if available, else DB poles
+    valid_coords = []
+    if found_poles_cache:
+        try:
+            with open(found_poles_cache, "r", encoding="utf-8") as pf:
+                poles_data = json.load(pf)
+            valid_coords = [
+                p for p in poles_data 
+                if p.get("latitude") and p.get("longitude") 
+                and is_valid_lat_long(float(p["latitude"]), float(p["longitude"]))
+            ]
+        except Exception:
+            valid_coords = []
 
-    center_lat = None
-    center_lon = None
-    if has_valid:
-        center_lat = sum(p.latitude for p in valid_coords) / len(valid_coords)
-        center_lon = sum(p.longitude for p in valid_coords) / len(valid_coords)
+    if not valid_coords and poles:
+        valid_coords = [
+            {"latitude": p.latitude, "longitude": p.longitude}
+            for p in poles if is_valid_lat_long(p.latitude, p.longitude)
+        ]
+
+    has_valid = len(valid_coords) > 0
+    center_lat = sum(float(p["latitude"]) for p in valid_coords) / len(valid_coords) if has_valid else None
+    center_lon = sum(float(p["longitude"]) for p in valid_coords) / len(valid_coords) if has_valid else None
 
     # Check available active reports
     reports = db.query(Report).filter(
@@ -96,13 +127,20 @@ def get_ward_pole_summary(db: Session, ward_id: int) -> PoleSummaryOut:
         Report.is_active == True
     ).all()
     available_reports = [r.report_type for r in reports]
+    if has_meta and "master_merged_led" not in available_reports:
+        available_reports.append("master_merged_led")
+
+    # Display counts
+    display_total = total_db_poles if total_db_poles > 0 else (merged_tot if merged_tot > 0 else 0)
+    display_lamp = lamp_cnt
+    display_survey = total_db_poles if total_db_poles > 0 else (survey_cnt if survey_cnt > 0 else display_total)
 
     return PoleSummaryOut(
         ward_id=ward_id,
-        total_poles=total,
-        installed_lamp_count=0,
-        extracted_survey_count=total,
-        connected_poles=connected,
+        total_poles=display_total,
+        installed_lamp_count=display_lamp,
+        extracted_survey_count=display_survey,
+        connected_poles=display_total if connected == 0 and total_db_poles == 0 else (connected if connected > 0 else display_total),
         disconnected_poles=disconnected,
         pending_poles=pending,
         unknown_poles=unknown,
@@ -123,27 +161,70 @@ def get_ward_poles_list(
     import json
     from ..config import settings
 
+    ward = db.query(Ward).filter(Ward.id == ward_id).first()
     merged_dir = Path(settings.STORAGE_ROOT) / "merged"
-    poles_cache_path = merged_dir / f"ward_{ward_id}_master_merged_poles.json"
+    
+    cand_poles = []
+    if ward:
+        cand_poles.append(merged_dir / f"ward_{ward.ward_number}_master_merged_poles.json")
+        if ward.ward_number in LEGACY_WARD_MAP:
+            cand_poles.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_poles.json")
+    cand_poles.append(merged_dir / f"ward_{ward_id}_master_merged_poles.json")
 
-    if poles_cache_path.exists():
-        try:
-            with open(poles_cache_path, "r", encoding="utf-8") as pf:
-                poles_data = json.load(pf)
+    for cp in cand_poles:
+        if cp.exists():
+            try:
+                with open(cp, "r", encoding="utf-8") as pf:
+                    poles_data = json.load(pf)
 
-            if source_filter and source_filter.lower() != "all":
-                s_lower = source_filter.lower()
-                poles_data = [p for p in poles_data if p.get("source", "").lower() == s_lower]
+                if status_filter and status_filter.lower() != "all":
+                    st_lower = status_filter.lower()
+                    poles_data = [p for p in poles_data if p.get("connectivity_status", "").lower() == st_lower]
 
-            return poles_data
-        except Exception:
-            pass
+                if source_filter and source_filter.lower() != "all":
+                    s_lower = source_filter.lower()
+                    poles_data = [p for p in poles_data if p.get("source", "").lower() == s_lower]
+
+                return poles_data
+            except Exception:
+                pass
 
     # Fallback to DB query
     query = db.query(Pole).filter(Pole.ward_id == ward_id)
     if status_filter and status_filter.lower() != "all":
         query = query.filter(Pole.connectivity_status == status_filter.lower())
-    return query.order_by(Pole.pole_number).all()
+    poles = query.order_by(Pole.pole_number).all()
+
+    # Determine active lamp report
+    lamp_rep = db.query(Report).filter(
+        Report.ward_id == ward_id,
+        Report.report_type == "lamp_installation",
+        Report.is_active == True
+    ).first()
+    lamp_rep_id = lamp_rep.id if lamp_rep else None
+
+    result = []
+    for p in poles:
+        p_src = "installed_lamp" if (lamp_rep_id and p.source_report_id == lamp_rep_id) else "extracted_survey"
+        p_dict = {
+            "id": p.id,
+            "ward_id": p.ward_id,
+            "pole_number": p.pole_number,
+            "latitude": p.latitude,
+            "longitude": p.longitude,
+            "connectivity_status": p.connectivity_status,
+            "source": p_src,
+            "source_report_id": p.source_report_id,
+            "additional_attributes": p.additional_attributes,
+            "created_at": p.created_at,
+            "updated_at": p.updated_at
+        }
+        if source_filter and source_filter.lower() != "all":
+            if p_src.lower() != source_filter.lower():
+                continue
+        result.append(p_dict)
+
+    return result
 
 def import_poles_for_ward(
     db: Session,

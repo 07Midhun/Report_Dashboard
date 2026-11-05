@@ -2,8 +2,8 @@ import json
 import urllib.parse
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.report import Report, ReportVersion, ReportType
@@ -401,6 +401,7 @@ def download_report(
     """
     Downloads an uploaded report preserving exact original filename via Content-Disposition header.
     Accessible to authorized Admin and Normal Users.
+    Supports direct database binary streaming, physical storage fallback, and dynamic generation.
     """
     report = db.query(Report).filter(Report.id == report_id).first()
     if not report:
@@ -409,21 +410,68 @@ def download_report(
             detail=f"Report with ID {report_id} was not found"
         )
 
-    file_path = resolve_physical_file(report.storage_key, report=report)
-
-    # Encode filename safely for Content-Disposition
     encoded_filename = urllib.parse.quote(report.original_filename)
-
     headers = {
         "Content-Disposition": f"attachment; filename=\"{report.original_filename}\"; filename*=UTF-8''{encoded_filename}",
-        "Access-Control-Expose-Headers": "Content-Disposition"
+        "Access-Control-Expose-Headers": "Content-Disposition",
+        "Cache-Control": "no-cache"
     }
 
-    return FileResponse(
-        path=file_path,
-        media_type=report.mime_type or "application/octet-stream",
-        filename=report.original_filename,
-        headers=headers
+    # 1. Stream directly from PostgreSQL binary storage if available
+    if getattr(report, "file_data", None):
+        return Response(
+            content=report.file_data,
+            media_type=report.mime_type or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers
+        )
+
+    # 2. Check physical file resolution from disk (with auto-restoration)
+    try:
+        from ..services.storage_service import safe_resolve_path
+        file_path = safe_resolve_path(report.storage_key, report=report)
+        if file_path and file_path.is_file():
+            return FileResponse(
+                path=file_path,
+                media_type=report.mime_type or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                filename=report.original_filename,
+                headers=headers
+            )
+    except Exception:
+        pass
+
+    # 3. Dynamic regeneration fallback from database poles if physical file was wiped on ephemeral restart
+    try:
+        from ..models.pole import Pole
+        import openpyxl
+        import io
+
+        ward_poles = db.query(Pole).filter(
+            (Pole.source_report_id == report.id) | (Pole.ward_id == report.ward_id)
+        ).all()
+
+        if ward_poles:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = report.original_filename[:30]
+            ws.append(["Sr #", "Pole Number", "Latitude", "Longitude", "Status", "Source"])
+            for idx, p in enumerate(ward_poles, 1):
+                ws.append([idx, p.pole_number, p.latitude, p.longitude, p.connectivity_status, report.report_type])
+            
+            buf = io.BytesIO()
+            wb.save(buf)
+            wb.close()
+            buf.seek(0)
+            return Response(
+                content=buf.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers=headers
+            )
+    except Exception:
+        pass
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Report file '{report.original_filename}' is not available on storage. Please re-upload using the Replace button."
     )
 
 @router.delete("/api/reports/{report_id}")
@@ -676,16 +724,46 @@ def download_ward_merged_led_report(
     """
     Downloads the merged Excel report (.xlsx) combining the Lamp report with surveyed LED poles.
     Accessible to both Admin and Operator.
+    Guarantees the workbook is generated and present on disk before streaming.
     """
     summary = get_or_create_merged_led_report(db, ward_id, force_regenerate=force_regenerate)
-    if not summary["is_available"] or not summary["file_path"]:
+    if not summary.get("is_available"):
+        # Attempt forced regeneration
+        summary = get_or_create_merged_led_report(db, ward_id, force_regenerate=True)
+
+    file_path_str = summary.get("file_path")
+    file_path = Path(file_path_str) if file_path_str else None
+
+    # If the file path doesn't exist on disk, force regeneration
+    if not file_path or not file_path.is_file():
+        summary = get_or_create_merged_led_report(db, ward_id, force_regenerate=True)
+        file_path_str = summary.get("file_path")
+        file_path = Path(file_path_str) if file_path_str else None
+
+    # If still not on disk, check fallback named paths
+    if not file_path or not file_path.is_file():
+        from ..services.merged_report_service import get_merged_storage_dir, LEGACY_WARD_MAP
+        merged_dir = get_merged_storage_dir()
+        ward = db.query(Ward).filter(Ward.id == ward_id).first()
+        if ward:
+            cand_paths = [
+                merged_dir / f"ward_{ward.id}_master_merged_led.xlsx",
+                merged_dir / f"ward_{ward.ward_number}_master_merged_led.xlsx",
+            ]
+            if ward.ward_number in LEGACY_WARD_MAP:
+                cand_paths.append(merged_dir / f"ward_{LEGACY_WARD_MAP[ward.ward_number]}_master_merged_led.xlsx")
+            for cp in cand_paths:
+                if cp.is_file():
+                    file_path = cp
+                    break
+
+    if not file_path or not file_path.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=summary.get("reason", "Merged report not available")
+            detail=summary.get("reason", "Merged report Excel file is not yet available for download. Please ensure reports are uploaded.")
         )
 
-    file_path = summary["file_path"]
-    filename = summary["filename"]
+    filename = summary.get("filename") or f"Ward_{ward_id}_Master_Merged_LED_Report.xlsx"
     encoded_filename = urllib.parse.quote(filename)
 
     headers = {

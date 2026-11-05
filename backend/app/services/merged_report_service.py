@@ -253,9 +253,15 @@ def get_or_create_merged_led_report(
                 pole_cnt = meta.get("pole_led_rows_count", 0)
                 tot_cnt = meta.get("total_merged_count", lamp_cnt + pole_cnt)
                 
-                if tot_cnt > 0:
-                    resolved_output = found_output or output_path
-                    file_sz = meta.get("file_size", resolved_output.stat().st_size if resolved_output.exists() else 0)
+                # Check if the workbook file actually exists on physical storage
+                resolved_output = None
+                for co in cand_outputs:
+                    if co and co.is_file():
+                        resolved_output = co
+                        break
+
+                if tot_cnt > 0 and resolved_output and resolved_output.is_file():
+                    file_sz = meta.get("file_size", resolved_output.stat().st_size)
 
                     return {
                         "is_available": True,
@@ -266,7 +272,7 @@ def get_or_create_merged_led_report(
                         "lamp_rows_count": lamp_cnt,
                         "pole_led_rows_count": pole_cnt,
                         "total_merged_count": tot_cnt,
-                        "file_path": str(resolved_output) if resolved_output.exists() else str(output_path),
+                        "file_path": str(resolved_output),
                         "filename": output_filename,
                         "file_size": file_sz,
                         "generated_at": meta.get("generated_at"),
@@ -289,6 +295,41 @@ def get_or_create_merged_led_report(
             return generate_pole_only_merged_report(
                 ward=ward,
                 poles=db_poles,
+                output_path=output_path,
+                named_output_path=named_output_path,
+                meta_path=meta_path,
+                named_meta_path=named_meta_path,
+                poles_cache_path=poles_cache_path
+            )
+
+        # Check if cached poles JSON exists to reconstruct Excel on the fly
+        cached_poles = []
+        for cand_pc in [poles_cache_path, named_poles_cache_path, merged_dir / f"ward_{ward.ward_number}_master_merged_poles.json"]:
+            if cand_pc and cand_pc.is_file():
+                try:
+                    with open(cand_pc, "r", encoding="utf-8") as pf:
+                        cached_poles = json.load(pf)
+                    if cached_poles:
+                        break
+                except Exception:
+                    pass
+
+        if cached_poles:
+            from ..models.pole import Pole
+            mock_poles = []
+            for cp in cached_poles:
+                p_obj = Pole(
+                    ward_id=ward.id,
+                    pole_number=cp.get("pole_number", ""),
+                    latitude=cp.get("latitude", 0.0),
+                    longitude=cp.get("longitude", 0.0),
+                    connectivity_status=cp.get("connectivity_status", "connected"),
+                    additional_attributes=cp.get("additional_attributes", {})
+                )
+                mock_poles.append(p_obj)
+            return generate_pole_only_merged_report(
+                ward=ward,
+                poles=mock_poles,
                 output_path=output_path,
                 named_output_path=named_output_path,
                 meta_path=meta_path,

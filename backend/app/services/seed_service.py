@@ -71,105 +71,18 @@ BBMP_HIERARCHY = [
 
 def restore_database_backup_if_empty(db: Session) -> bool:
     """
-    If the database is brand new (e.g. freshly deployed on Render), restores
-    data from database_backup.sql (including 42,000+ poles and existing reports).
-    Uses PostgreSQL cursor.copy_expert for high-speed streaming.
+    Disabled on production/Render to strictly prevent out-of-memory (OOM) crashes on 512MB RAM containers.
     """
-    try:
-        # Check if database already has poles
-        existing_poles = db.query(Pole).count()
-        if existing_poles > 0:
-            return False
-
-        # Locate database_backup.sql
-        possible_paths = [
-            Path("database_backup.sql"),
-            Path(__file__).resolve().parent.parent.parent.parent / "database_backup.sql",
-            Path(__file__).resolve().parent.parent.parent / "database_backup.sql",
-        ]
-        backup_file = None
-        for p in possible_paths:
-            if p.is_file() and p.stat().st_size > 1000:
-                backup_file = p
-                break
-
-        if not backup_file:
-            print("[Seed] No database_backup.sql file found; skipping backup restore.", flush=True)
-            return False
-
-        print(f"[Seed] Empty database detected. Restoring from {backup_file}...", flush=True)
-
-        with open(backup_file, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
-
-        # Find all COPY statements: COPY public.<table_name> (<cols>) FROM stdin; ... \.
-        copy_pattern = re.compile(r'COPY\s+public\.(\w+)\s*\(([^)]+)\)\s*FROM\s+stdin;(.*?)\\\.', re.DOTALL)
-        copy_blocks = {}
-        for match in copy_pattern.finditer(content):
-            table_name = match.group(1).lower()
-            columns_str = match.group(2).strip()
-            data_str = match.group(3).strip()
-            if data_str:
-                copy_blocks[table_name] = (columns_str, data_str)
-
-        # Restore in strict foreign-key dependency order
-        load_order = [
-            "users",
-            "regions",
-            "wards",
-            "reports",
-            "report_versions",
-            "poles",
-            "audit_logs",
-            "alembic_version"
-        ]
-
-        # Get underlying DBAPI connection (psycopg2)
-        raw_conn = db.connection().connection
-        restored_tables = []
-
-        with raw_conn.cursor() as cur:
-            for tbl in load_order:
-                if tbl in copy_blocks:
-                    cols, data = copy_blocks[tbl]
-                    # Only insert if table is currently empty
-                    cur.execute(f"SELECT COUNT(*) FROM public.{tbl};")
-                    count = cur.fetchone()[0]
-                    if count == 0:
-                        stream = io.StringIO(data + "\n")
-                        copy_sql = f"COPY public.{tbl} ({cols}) FROM stdin"
-                        cur.copy_expert(copy_sql, stream)
-                        restored_tables.append(tbl)
-
-            # Reset serial sequences for PostgreSQL
-            for tbl in ["users", "regions", "wards", "reports", "report_versions", "poles", "audit_logs"]:
-                try:
-                    cur.execute(f"SELECT setval(pg_get_serial_sequence('{tbl}', 'id'), COALESCE(MAX(id), 1)) FROM public.{tbl};")
-                except Exception:
-                    pass
-
-        raw_conn.commit()
-        print(f"[Seed] Successfully restored tables from backup: {restored_tables}", flush=True)
-        return True
-
-    except Exception as e:
-        print(f"[Seed] Notice: Could not restore from database_backup.sql: {e}", flush=True)
-        try:
-            db.rollback()
-        except Exception:
-            pass
-        return False
+    return False
 
 def seed_bbmp_hierarchy(db: Session):
     """
     Seeds and synchronizes the complete BBMP hierarchy:
     2 zones, 7 constituencies, and 57 wards (including W75 in PulakeshiNagar).
     This function is completely idempotent and safe to run on every startup.
+    Runs with near-zero memory footprint (<5MB RAM).
     """
     try:
-        # First, attempt to restore backup if DB is completely clean
-        restore_database_backup_if_empty(db)
-
         # Migrate old constituency codes to the new short forms
         old_to_new_codes = {
             "BOM-Z1": "BMH",

@@ -33,5 +33,11 @@ postgres.log
 *.sln
 *.sw?
 scratch_check.py
+scratch_*.py
 storage/merged/*.xlsx
 storage/merged/*_poles.json
+!storage/merged/ward_W61_master_merged_poles.json
+!storage/merged/ward_W62_master_merged_poles.json
+!storage/merged/ward_W63_master_merged_poles.json
+
+

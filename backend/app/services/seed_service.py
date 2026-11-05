@@ -182,6 +182,25 @@ def seed_bbmp_hierarchy(db: Session):
         total_wards = db.query(Ward).count()
         print(f"[Seed] BBMP hierarchy verified: {total_regions} constituencies, {total_wards} wards ready.", flush=True)
 
+        # 4. Auto-backfill file_data for reports in PostgreSQL if missing
+        try:
+            reports_missing_data = db.query(Report).filter(Report.file_data == None).all()
+            if reports_missing_data:
+                from ..services.storage_service import safe_resolve_path
+                backfilled = 0
+                for r in reports_missing_data:
+                    p = safe_resolve_path(r.storage_key, report=r)
+                    if p and p.is_file():
+                        with open(p, "rb") as bf:
+                            r.file_data = bf.read()
+                        backfilled += 1
+                if backfilled > 0:
+                    db.commit()
+                    print(f"[Seed] Backfilled binary data for {backfilled} reports in PostgreSQL.", flush=True)
+        except Exception as e:
+            db.rollback()
+            print(f"[Seed] Backfill error: {e}", flush=True)
+
     except Exception as e:
         db.rollback()
         print(f"[Seed] Error ensuring BBMP hierarchy: {e}", flush=True)

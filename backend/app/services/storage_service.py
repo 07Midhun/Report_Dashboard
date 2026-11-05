@@ -147,6 +147,39 @@ def safe_resolve_path(storage_key: str, report: Optional[Any] = None) -> Optiona
         except Exception:
             pass
 
+    # Search in storage/reports for matching hash folder or filename
+    try:
+        reports_dir = Path(settings.STORAGE_ROOT) / "reports"
+        if reports_dir.is_dir():
+            # Extract hash folder from storage_key if present
+            parts = normalized.split("/")
+            hash_candidate = None
+            for part in parts:
+                if len(part) == 32 and all(c in "0123456789abcdefABCDEF" for c in part):
+                    hash_candidate = part
+                    break
+            
+            for f in reports_dir.rglob("*.xlsx"):
+                if hash_candidate and hash_candidate in str(f):
+                    if report and not getattr(report, "file_data", None):
+                        try:
+                            with open(f, "rb") as bf:
+                                report.file_data = bf.read()
+                        except Exception:
+                            pass
+                    return f
+                if report and getattr(report, "original_filename", None):
+                    if f.name == report.original_filename or f.name == f"report_{hash_candidate}.xlsx":
+                        if report and not getattr(report, "file_data", None):
+                            try:
+                                with open(f, "rb") as bf:
+                                    report.file_data = bf.read()
+                            except Exception:
+                                pass
+                        return f
+    except Exception:
+        pass
+
     return None
 
 def resolve_physical_file(storage_key: str, report: Optional[Any] = None) -> Path:
